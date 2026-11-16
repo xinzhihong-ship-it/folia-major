@@ -35,7 +35,7 @@ const memoryStore = () => {
     return { get: (key: string) => data.get(key), set: (key: string, value: unknown) => { data.set(key, value); }, delete: (key: string) => { data.delete(key); }, data };
 };
 
-const bridgeFor = (files: Record<string, string>, store = memoryStore(), onEvent: (event: unknown) => void = () => {}) => {
+const bridgeFor = (files: Record<string, string>, store = memoryStore(), onEvent: (event: unknown) => void = () => {}, extra: Record<string, unknown> = {}) => {
     const bridge = createLxmusicApiBridge({
         store,
         linkFilePaths: Object.keys(files),
@@ -47,6 +47,7 @@ const bridgeFor = (files: Record<string, string>, store = memoryStore(), onEvent
         onEvent,
         warn: () => {},
         info: () => {},
+        ...extra,
     });
     bridges.push(bridge);
     return bridge;
@@ -147,5 +148,79 @@ describe('the LX Music bridge', () => {
         const store = memoryStore();
         expect(await bridgeFor({}, store).request('link')).toMatchObject({ ok: false, error: { code: 'unavailable', cause: 'not-running' } });
         expect(store.data.has(LINKED_KEY)).toBe(false);
+    });
+});
+
+describe('the LX Music event stream', () => {
+    const eventsOf = (events: unknown[]) => events.filter(event => (event as { type: string }).type !== 'connection');
+
+    it('reads events split across chunks, joins data lines and skips heartbeats and other events', async () => {
+        const port = await startLx((req, res) => {
+            if (req.url !== '/events') return json(res, 200, { ok: true, data: {} });
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+            res.write(': ping\n\n');
+            res.write('event: sta');
+            res.write('te\ndata: {"musicId":\n');
+            res.write('data: "kw_1"}\n\n');
+            res.write('event: other\ndata: {}\n\n');
+            res.write('event: lists\ndata: {"listsRev":2}\n\n');
+        });
+        const store = memoryStore();
+        store.set(LINKED_KEY, true);
+        const events: unknown[] = [];
+        bridgeFor({ f: linkFile(port, 't') }, store, event => events.push(event));
+        await expect.poll(() => eventsOf(events)).toEqual([
+            { type: 'state', data: { musicId: 'kw_1' } },
+            { type: 'lists', data: { listsRev: 2 } },
+        ]);
+    });
+
+    it('keeps one stream, opens it again after it closes, and stops on unlink', async () => {
+        const streams: http.ServerResponse[] = [];
+        const port = await startLx((req, res) => {
+            if (req.url !== '/events') return json(res, 200, { ok: true, data: {} });
+            streams.push(res);
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+            res.write(': ping\n\n');
+        });
+        const store = memoryStore();
+        store.set(LINKED_KEY, true);
+        const bridge = bridgeFor({ f: linkFile(port, 't') }, store, () => {}, { eventsRetryMs: 20 });
+        await expect.poll(() => streams.length).toBe(1);
+        // A link made again while the stream is open opens no second one
+        expect(await bridge.request('link')).toMatchObject({ ok: true });
+        await new Promise(resolve => setTimeout(resolve, 60));
+        expect(streams.length).toBe(1);
+        streams[0].end();
+        await expect.poll(() => streams.length).toBe(2);
+        expect(await bridge.request('unlink')).toEqual({ ok: true, data: null });
+        await new Promise(resolve => setTimeout(resolve, 80));
+        expect(streams.length).toBe(2);
+    });
+
+    it('opens no stream when unlinked while the link file is still being read', async () => {
+        let opened = 0;
+        const port = await startLx((req, res) => {
+            if (req.url !== '/events') return json(res, 200, { ok: true, data: {} });
+            opened += 1;
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        });
+        const store = memoryStore();
+        store.set(LINKED_KEY, true);
+        let release: () => void = () => {};
+        const held = new Promise<void>(resolve => { release = resolve; });
+        const bridge = bridgeFor({}, store, () => {}, {
+            linkFilePaths: ['f'],
+            readFile: async () => {
+                await held;
+                return linkFile(port, 't');
+            },
+        });
+        await new Promise(resolve => setTimeout(resolve, 20));
+        store.delete(LINKED_KEY);
+        release();
+        await new Promise(resolve => setTimeout(resolve, 80));
+        expect(opened).toBe(0);
+        bridge.close();
     });
 });

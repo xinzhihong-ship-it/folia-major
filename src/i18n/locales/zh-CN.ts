@@ -3766,7 +3766,7 @@ export default {
     "shuffleRoundNoRepeat": "一轮不重复",
     "shuffleRoundNoRepeatDesc": "打乱队列和随机播放时，这一轮已经听过的歌排到后面，先放没听过的；开着列表循环时，整轮听完会自动重新打乱。只对打乱过的队列生效，关着时和原来一样。",
     "followExternalPlayer": "外部播放器开播时跟随",
-    "followExternalPlayerDesc": "自己管播放队列的外部播放器在它自己的窗口里开始放歌、而 Folia 没在放自己的歌时，Folia 换上那首并显示歌词。",
+    "followExternalPlayerDesc": "自己管播放队列的外部播放器在它自己的窗口里开始放歌时，Folia 换上那首并显示歌词，正在放的歌让出来。",
     "audioOutputDevice": "当前播放声卡",
     "audioOutputRefresh": "刷新",
     "audioOutputUnsupported": "当前环境不支持切换播放设备。",

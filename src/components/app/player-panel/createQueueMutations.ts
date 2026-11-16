@@ -11,7 +11,7 @@ import type { AudioQualityPreference, MediaId } from '../../../types/onlineMusic
 import type { QueueBatchAction } from '../../command-palette/queueQuery';
 import { setStatusMessage as setStatusMsg } from '../../../stores/useStatusMessageStore';
 import { setPlayQueue } from '../../../stores/usePlaybackStore';
-import { queueInLeadingPlayer, refuseLeadingQueueEdit, songsForLeadingPlayer } from '../playback/leadingPlayerQueue';
+import { queueInLeadingPlayer, refuseForeignQueueAdd, refuseLeadingQueueEdit, songsForLeadingPlayer } from '../playback/leadingPlayerQueue';
 
 // src/components/app/player-panel/createQueueMutations.ts
 
@@ -41,6 +41,8 @@ export const createQueueMutations = ({
             return;
         }
 
+        // 外部播放器主导时，Navidrome 的歌排不进它的队列
+        if (refuseForeignQueueAdd(t)) return;
         const unifiedSongs = buildNavidromeQueue(songs);
         const baseQueue = playQueue.length > 0 ? playQueue : (currentSong ? [currentSong] : []);
         const { nextQueue, affectedSongs, changed } = applyQueueAddBehavior({

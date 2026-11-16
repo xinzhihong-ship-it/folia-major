@@ -63,8 +63,8 @@ describe('useSearchNavigationStore', () => {
     it('narrows an online song search to the kept scope, and keeps those results apart', async () => {
         const search = vi.spyOn(omni, 'searchProviderSongs').mockResolvedValue({ items: [], total: 0, nextOffset: 0, hasMore: false });
         try {
-            useSearchNavigationStore.getState().setSearchScope('netease', 'kw');
-            expect(useSearchNavigationStore.getState().searchScopes).toEqual({ netease: 'kw' });
+            useSearchNavigationStore.getState().setSearchScope('netease', { id: 'kw', name: '酷我' });
+            expect(useSearchNavigationStore.getState().searchScopes).toEqual({ netease: { id: 'kw', name: '酷我' } });
             await useSearchNavigationStore.getState().submitSearch({ query: 'a', sourceTab: 'netease', deps });
             expect(search).toHaveBeenLastCalledWith('netease', 'a', { limit: 30, offset: 0 }, { scope: 'kw' });
             expect(Object.keys(useSearchNavigationStore.getState().searchCache)).toEqual(['netease@kw:song:a']);

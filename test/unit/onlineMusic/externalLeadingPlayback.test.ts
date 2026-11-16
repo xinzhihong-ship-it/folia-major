@@ -24,7 +24,8 @@ const omniMock = vi.hoisted(() => ({
     getExternalPlaybackStatus: vi.fn<(song: unknown) => Promise<ProviderExternalPlaybackStatus>>(async () => ({
         mediaId: 'kw_1', isPlaying: true, positionMs: 10000, durationMs: 200000, ended: false,
     })),
-    isExternalPlaybackStatusForSong: vi.fn((_song: unknown, status: ProviderExternalPlaybackStatus) => status.mediaId === 'kw_1'),
+    isExternalPlaybackStatusForSong: vi.fn((song: SongResult, status: ProviderExternalPlaybackStatus) => song.sourceRef?.kind === 'online' && status.mediaId === song.sourceRef.mediaId),
+    resolveAudioQualityForSong: vi.fn<(song: unknown, quality: string) => string>((...args) => args[1]),
     adoptExternalPlayback: vi.fn<(song: unknown) => void>(() => {}),
 }));
 
@@ -124,6 +125,41 @@ describe('external route with a leading player', () => {
         expect(moved).toHaveLength(1);
         expect(events.some(event => event.type === 'foreign-track')).toBe(false);
         expect(omniMock.pauseExternalPlayback).not.toHaveBeenCalled();
+    });
+
+    it('is told again to follow when the follow did not take, and knows a follow gone stale', async () => {
+        await start();
+        const moved = { ...song, id: 'kw_2', sourceRef: { kind: 'online' as const, providerId: 'lxmusic', mediaId: 'kw_2' } };
+        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ mediaId: 'kw_2', positionMs: 0 }));
+        await vi.advanceTimersByTimeAsync(600);
+        expect(events.filter(event => event.type === 'player-moved')).toHaveLength(1);
+        expect(engine.isLeadingFollowCurrent(song, moved)).toBe(true);
+        // Still on it five seconds on: the follow did not take
+        await vi.advanceTimersByTimeAsync(5600);
+        expect(events.filter(event => event.type === 'player-moved')).toHaveLength(2);
+        // The player moved on again: following kw_2 now would take the app back
+        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ mediaId: 'kw_3', positionMs: 0 }));
+        await vi.advanceTimersByTimeAsync(600);
+        expect(engine.isLeadingFollowCurrent(song, moved)).toBe(false);
+    });
+
+    it('sends a volume moved while muted, with the mute', async () => {
+        await start();
+        await vi.advanceTimersByTimeAsync(2500);
+        useAudioSettingsStore.getState().handleSetMuted(true);
+        await flush();
+        expect(omniMock.setExternalPlaybackVolume).toHaveBeenLastCalledWith(song, 0.6, true);
+        useAudioSettingsStore.getState().handleSetVolume(0.4);
+        await flush();
+        expect(omniMock.setExternalPlaybackVolume).toHaveBeenLastCalledWith(song, 0.4, true);
+    });
+
+    it('takes the player quality setting into the preference without sending it back', async () => {
+        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ quality: 'lossless' }));
+        await start();
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(useAudioSettingsStore.getState().audioQuality).toBe('lossless');
+        expect(omniMock.setExternalPlaybackQuality).not.toHaveBeenCalled();
     });
 
     it('does not move the app queue at the end of a track', async () => {

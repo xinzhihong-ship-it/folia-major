@@ -41,6 +41,15 @@ interface LxQueueAnswer {
 }
 
 const LOOP_TO_LX: Record<'off' | 'all' | 'one', string> = { off: 'list', all: 'listLoop', one: 'singleLoop' };
+/** 洛雪的音质设置换成 Folia 的档位：杜比全景声、母带这些更高的档算最高一档。 */
+const QUALITY_FROM_LX: Record<string, AudioQualityPreference> = {
+    '128k': 'standard', '192k': 'standard', '320k': 'high', flac: 'lossless',
+    flac24bit: 'hires', hires: 'hires', atmos: 'hires', atmos_plus: 'hires', master: 'hires',
+};
+/** 跟随洛雪换歌时，等封面最多这么久；没等到就先换歌（封面读到后留着，下一次就有）。 */
+const COVER_WAIT_MS = 1500;
+/** 跟随之后多久内来的 play 才算接手（不叫洛雪换歌）；过了这么久、或洛雪已经不在这首上，就照常放。 */
+const HANDOFF_MS = 10_000;
 const QUALITY_TO_LX: Record<AudioQualityPreference, string> = { standard: '128k', high: '320k', ultra: '320k', lossless: 'flac', hires: 'hires' };
 const QUALITY_LABELS: Record<string, string> = {
     '128k': '128K', '192k': '192K', '320k': '320K', flac: 'FLAC', flac24bit: 'Hi-Res', hires: 'Hi-Res',
@@ -53,6 +62,11 @@ export const lxLoopModeOf = (playMode: string): 'off' | 'all' | 'one' => {
     if (playMode === 'list' || playMode === 'none') return 'off';
     return 'all';
 };
+
+/** 洛雪的音质设置在 Folia 的档位里是哪一档；认不出（本地、下载）时不说。 */
+export const lxQualityOf = (quality: LxPlayerState['quality'] | undefined): AudioQualityPreference | undefined => (
+    quality?.wanted ? QUALITY_FROM_LX[quality.wanted] : undefined
+);
 
 export const lxQualityLabelOf = (quality: LxPlayerState['quality'] | undefined): string | undefined => {
     const raw = quality?.actual || quality?.current;
@@ -79,10 +93,12 @@ export const lxExternalStatusOf = (raw: unknown): ProviderExternalPlaybackStatus
         ended: false,
         ...(loading && mediaId ? { starting: true } : {}),
         rate: finiteOr(state.rate, 1) > 0 ? finiteOr(state.rate, 1) : 1,
-        volume: Math.min(1, Math.max(0, finiteOr(state.volume, 1))),
-        muted: state.mute === true,
-        loopMode: lxLoopModeOf(typeof state.playMode === 'string' ? state.playMode : ''),
-        queueRevision: String(state.queueRev ?? ''),
+        // 洛雪没说的不替它说：主导模式会把音量、静音、播放模式写进 Folia 的设置
+        ...(typeof state.volume === 'number' && Number.isFinite(state.volume) ? { volume: Math.min(1, Math.max(0, state.volume)) } : {}),
+        ...(typeof state.mute === 'boolean' ? { muted: state.mute } : {}),
+        ...(typeof state.playMode === 'string' && state.playMode ? { loopMode: lxLoopModeOf(state.playMode) } : {}),
+        ...(typeof state.queueRev === 'number' ? { queueRevision: String(state.queueRev) } : {}),
+        ...(lxQualityOf(state.quality) ? { quality: lxQualityOf(state.quality) } : {}),
         ...(lxQualityLabelOf(state.quality) ? { qualityLabel: lxQualityLabelOf(state.quality) } : {}),
     };
 };
@@ -94,18 +110,33 @@ export const lxExternalStatusOf = (raw: unknown): ProviderExternalPlaybackStatus
 export const composeLxQueue = (answer: LxQueueAnswer, currentId: string | null, current: LxMusicInfo | null): UnifiedSong[] => {
     const origin = { listId: answer.listId };
     const list = answer.list.filter(isLxMusicInfo).map(info => normalizeLxmusicSong(info, origin));
-    const later = answer.playLater.filter(isLxMusicInfo).map(info => normalizeLxmusicSong(info));
+    // 稍后播放的歌记着它排在稍后播放里：在 Folia 的队列里点它，洛雪从稍后播放里放，不换正在播放的列表
+    const later = answer.playLater.filter(isLxMusicInfo).map(info => normalizeLxmusicSong(info, { later: true }));
     const index = currentId ? list.findIndex(song => song.id === currentId) : -1;
     if (index >= 0) return [...list.slice(0, index + 1), ...later, ...list.slice(index + 1)];
     const head = current ? [normalizeLxmusicSong(current)] : [];
     return [...head, ...later.filter(song => song.id !== currentId), ...list];
 };
 
+/** 等一个读取最多这么久：读完了回它的结果，没读完或读失败回 null（读到的封面照样留着）。 */
+const within = <T>(work: Promise<T>, ms: number): Promise<T | null> => new Promise(resolve => {
+    const timer = setTimeout(() => { resolve(null); }, ms);
+    work.then(value => {
+        clearTimeout(timer);
+        resolve(value);
+    }, () => {
+        clearTimeout(timer);
+        resolve(null);
+    });
+});
+
 export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider {
     /** 最近一次读到的洛雪状态。 */
     let lastState: LxPlayerState | null = null;
-    /** 洛雪自己换到的这首：下一次 play 它时不重新开始，接着放（follow 之后 Folia 的 playSong 会来 play）。 */
-    let handoffId: string | null = null;
+    /** 洛雪自己换到的这首和跟随它的时刻：随后 play 它时不重新开始，接着放（follow 之后 Folia 的 playSong 会来 play）。 */
+    let handoff: { id: string; at: number } | null = null;
+    /** 刚跟过、洛雪还在这首上：play 它就是接手。 */
+    const isHandedOff = (id: string) => handoff !== null && handoff.id === id && Date.now() - handoff.at < HANDOFF_MS && lastState?.musicId === id;
     let queueCache: { revision: number; currentId: string | null; songs: UnifiedSong[] } | null = null;
 
     const readState = async () => {
@@ -132,7 +163,7 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
         if (!state.musicId || !isLxMusicInfo(state.musicInfo)) return null;
         const song = normalizeLxmusicSong(state.musicInfo, { listId: state.isTempPlay ? null : state.listId });
         if (song.album.coverUrl) return song;
-        return withLxCover(song, await readLxCoverUrl(state.musicInfo).catch(() => null));
+        return withLxCover(song, await within(readLxCoverUrl(state.musicInfo), COVER_WAIT_MS));
     };
 
     return {
@@ -141,16 +172,14 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
             try { lxMusicInfoOf(song); return true; } catch { return false; }
         },
         isPrepared: song => {
-            try { return handoffId === lxMusicIdOf(song); } catch { return false; }
+            try { return isHandedOff(lxMusicIdOf(song)); } catch { return false; }
         },
         async play(song, startSec) {
             const id = lxMusicIdOf(song);
             // 洛雪自己换到了这首（follow）：它已经在放，什么都不用做
-            if (handoffId === id) {
-                handoffId = null;
-                return;
-            }
-            handoffId = null;
+            const handedOff = isHandedOff(id);
+            handoff = null;
+            if (handedOff) return;
             const info = lxMusicInfoOf(song);
             const seconds = Math.max(0, Number.isFinite(startSec) ? startSec : 0);
             // 洛雪已经停在这首上（Folia 重开后点播放、点了正在放的那首）：接着放，不从头开始。现读一次，旧的状态可能已经换了歌
@@ -162,18 +191,20 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
                 return;
             }
             const origin = lxSongOriginOf(song);
-            const target = origin.share
-                ? { target: 'songlist', text: origin.share.text, source: origin.share.source, musicId: id }
-                : origin.listId
-                    ? { target: 'list', listId: origin.listId, musicId: id }
-                    : { target: 'search', musicInfo: info };
+            const target = origin.later
+                ? { target: 'later', musicInfos: [info], now: true }
+                : origin.share
+                    ? { target: 'songlist', text: origin.share.text, source: origin.share.source, musicId: id }
+                    : origin.listId
+                        ? { target: 'list', listId: origin.listId, musicId: id }
+                        : { target: 'search', musicInfo: info };
             await requestLxmusic('play', target);
             if (seconds > 1) await control('seek', seconds);
             console.info('[LxMusic] play started', { target: target.target });
         },
         // 窗口重建后新窗口接着跟：洛雪那边什么都不用动
         adopt() {
-            handoffId = null;
+            handoff = null;
         },
         async pause() { await control('pause'); },
         async resume() { await control('play'); },
@@ -213,7 +244,7 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
                 console.warn('[LxMusic] could not read the queue to follow', error);
                 return [song];
             });
-            handoffId = song.id as string;
+            handoff = { id: song.id as string, at: Date.now() };
             return { song, queue: queue.length ? queue : [song] };
         },
         async getQueue() {
@@ -222,17 +253,23 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
         watchPlayer(tell) {
             // 洛雪推来的状态：开始放一首（换了歌，或者从暂停到播放）时告诉一声
             let toldKey = '';
-            return subscribeLxmusicEvents(event => {
-                if (event.type !== 'state') return;
-                const state = event.data as LxPlayerState;
+            const hear = (raw: unknown) => {
                 let status: ProviderExternalPlaybackStatus;
-                try { status = lxExternalStatusOf(state); } catch { return; }
-                lastState = state;
+                try { status = lxExternalStatusOf(raw); } catch { return; }
+                lastState = raw as LxPlayerState;
                 const key = status.isPlaying ? status.mediaId : '';
                 if (key === toldKey) return;
                 toldKey = key;
                 if (key) tell(status);
+            };
+            const stop = subscribeLxmusicEvents(event => {
+                if (event.type === 'state') hear(event.data);
             });
+            // Folia 打开时洛雪可能已经在放（它的第一条状态在窗口出来之前就推过了）：连接过的话问一次
+            void requestLxmusic<{ linked?: boolean } | null>('linkStatus')
+                .then(link => (link?.linked ? readState() : null))
+                .then(state => { if (state) hear(state); }, () => {});
+            return stop;
         },
     };
 }

@@ -376,17 +376,20 @@ export function usePlaybackVisualizerBridge({
             currentTime.set(nextTime);
 
             // The lyric read-head follows the stage clock as on every other route: without it the
-            // pushed lyrics' main line and word timing stay where the song change left them.
-            showLyricTime(nextTime);
-            showLine(lyrics ? findLatestActiveLineIndex(lyrics.lines, nextTime) : -1);
+            // pushed lyrics' main line and word timing stay where the song change left them. The
+            // lyric offset is taken off as on the other stage routes.
+            const effectiveLyricTime = nextTime - displayOffsetMsRef.current / 1000;
+            showLyricTime(effectiveLyricTime);
+            showLine(lyrics ? findLatestActiveLineIndex(lyrics.lines, effectiveLyricTime) : -1);
 
             if (hasReachedEnd) {
                 // An external player's clock is its own to restart: the loop mode does not replay it here.
                 if (!stageLyricsSession.clock && (effectiveLoopMode === 'one' || effectiveLoopMode === 'all')) {
                     syncStageLyricsClock(clock.startTimeSec, clock.endTimeSec, PlayerState.PLAYING, clock.startTimeSec);
                     currentTime.set(clock.startTimeSec);
-                    showLyricTime(clock.startTimeSec);
-                    showLine(lyrics ? findLatestActiveLineIndex(lyrics.lines, clock.startTimeSec) : -1);
+                    const restartLyricTime = clock.startTimeSec - displayOffsetMsRef.current / 1000;
+                    showLyricTime(restartLyricTime);
+                    showLine(lyrics ? findLatestActiveLineIndex(lyrics.lines, restartLyricTime) : -1);
                 } else {
                     syncStageLyricsClock(clock.endTimeSec, clock.endTimeSec, PlayerState.PAUSED, clock.startTimeSec);
                     setPlayerState(PlayerState.PAUSED);

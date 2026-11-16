@@ -517,6 +517,11 @@ export interface ProviderExternalPlaybackStatus {
     queueRevision?: string;
     /** The quality the player sounds the track at, in its own words (e.g. "FLAC"). */
     qualityLabel?: string;
+    /**
+     * A leading player's own quality setting, in the app's levels: the app's preference shows it (a
+     * setting above the app's highest level is that level).
+     */
+    quality?: AudioQualityPreference;
 }
 
 /** What a start in an external player is given besides the song: the queue it is played from. */

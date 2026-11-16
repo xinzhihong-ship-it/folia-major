@@ -114,6 +114,11 @@ export const lxmusicLibrary: OnlineLibraryProvider = {
         }
         return { ids: ids as string[], whole: true };
     },
+    // 「我的收藏」有几首：回到 Folia 窗口时比一下（account/readMoments.ts），在洛雪里收藏、取消收藏后 Folia 才重读
+    async getLikedSongCount() {
+        const ids: unknown = await requestLxmusic('likedIds');
+        return Array.isArray(ids) ? ids.length : null;
+    },
 };
 
 export const lxmusicCatalog: OnlineCatalogProvider = {

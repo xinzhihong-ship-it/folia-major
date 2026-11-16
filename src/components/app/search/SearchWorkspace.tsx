@@ -117,9 +117,9 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
     // 换了范围：记下，搜过词的话按新范围再搜一遍
     const selectScope = useCallback((next: string | null) => {
         if (searchSourceTab === 'local' || searchSourceTab === 'navidrome') return;
-        useSearchNavigationStore.getState().setSearchScope(searchSourceTab, next);
+        useSearchNavigationStore.getState().setSearchScope(searchSourceTab, next ? scopes.find(item => item.id === next) ?? null : null);
         if (submittedQuery.trim()) onSubmitSearch(searchSourceTab, searchKind);
-    }, [onSubmitSearch, searchKind, searchSourceTab, submittedQuery]);
+    }, [onSubmitSearch, scopes, searchKind, searchSourceTab, submittedQuery]);
     const hasCollection = useCollectionNavigationStore(state => Boolean(state.snapshot?.stack.length));
     const getSourceLabel = useSearchSourceLabel();
     const collectTrack = useCallback((track: UnifiedSong) => {

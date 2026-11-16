@@ -3766,7 +3766,7 @@ export default {
     "shuffleRoundNoRepeat": "Trộn theo vòng",
     "shuffleRoundNoRepeatDesc": "Khi trộn hàng đợi hoặc phát ngẫu nhiên, các bài đã nghe trong vòng này được xếp sau các bài chưa nghe. Khi bật lặp danh sách, vòng đã nghe hết sẽ tự trộn lại. Chỉ theo dõi hàng đợi đã trộn; khi tắt, trộn như trước.",
     "followExternalPlayer": "Theo trình phát bên ngoài",
-    "followExternalPlayerDesc": "Khi một trình phát bên ngoài tự quản lý hàng đợi bắt đầu phát bài trong cửa sổ của nó và Folia không đang phát bài của mình, Folia sẽ nhận bài đó và hiển thị lời.",
+    "followExternalPlayerDesc": "Khi một trình phát bên ngoài tự quản lý hàng đợi bắt đầu phát bài trong cửa sổ của nó, Folia sẽ nhận bài đó, hiển thị lời và dừng bài đang phát.",
     "audioOutputDevice": "Thiết bị đầu ra hiện tại",
     "audioOutputRefresh": "Làm mới",
     "audioOutputUnsupported": "Môi trường này không hỗ trợ chuyển thiết bị âm thanh đầu ra.",

@@ -34,10 +34,11 @@ export interface LxListInfo {
     sourceListId?: string | null;
 }
 
-/** 在哪个列表里读到这首歌、或者它来自哪张分享歌单：播放时据此决定在洛雪里怎么放。 */
+/** 在哪个列表里读到这首歌、它来自哪张分享歌单、或者它排在洛雪的稍后播放里：播放时据此决定在洛雪里怎么放。 */
 export interface LxSongOrigin {
     listId?: string | null;
     share?: { source: string; text: string };
+    later?: boolean;
 }
 
 const SHARE_PREFIX = 'share:';
@@ -82,6 +83,7 @@ export const normalizeLxmusicSong = (raw: unknown, origin: LxSongOrigin = {}): U
     const providerData: Record<string, JsonValue> = { musicInfo: info as unknown as JsonValue, source: info.source };
     if (origin.listId) providerData.listId = origin.listId;
     if (origin.share) providerData.share = { source: origin.share.source, text: origin.share.text };
+    if (origin.later) providerData.later = true;
     return {
         id: info.id,
         name: info.name,
@@ -119,6 +121,7 @@ export const lxSongOriginOf = (song: SongResult): LxSongOrigin => {
     return {
         listId: typeof data?.listId === 'string' ? data.listId : null,
         ...(share && typeof share.source === 'string' && typeof share.text === 'string' ? { share: { source: share.source, text: share.text } } : {}),
+        ...(data?.later === true ? { later: true } : {}),
     };
 };
 

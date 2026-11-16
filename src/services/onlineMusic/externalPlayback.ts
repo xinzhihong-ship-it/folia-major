@@ -52,6 +52,11 @@ const HANDOVER_RECLAIM_MS = 10_000;
  * older value for a moment: they are not taken over the listener's change for this long.
  */
 const LOCAL_CHANGE_HOLD_MS = 2000;
+/**
+ * A leading player still on the track the app was told to follow this long after: the follow did not
+ * take (its read failed, or the song could not be told), so the app is told again.
+ */
+const FOLLOW_RETRY_MS = 5000;
 
 export type ExternalPlaybackEvent =
     | { type: 'status' }
@@ -92,8 +97,11 @@ type ExternalSession = {
     leads: boolean;
     /** The speed the player last said it plays at. */
     rate: number;
-    /** The other track a leading player moved to that the app was told to follow. */
+    /** The other track a leading player moved to that the app was told to follow, and its newest answer. */
     followingMediaId: string | null;
+    followingStatus: ProviderExternalPlaybackStatus | null;
+    /** When the app was last told to follow it (performance.now): told again after FOLLOW_RETRY_MS. */
+    followingAt: number;
     /** The quality the player last said it sounds the track at, in its own words ("FLAC"). */
     qualityLabel: string | null;
 };
@@ -114,8 +122,12 @@ let pollRunning = false;
 let installed = false;
 let ownWriteDepth = 0;
 let failureNoted = false;
-/** The level the player last confirmed, or null when unknown (a new start, a failed write). */
-let appliedVolume: number | null = null;
+/**
+ * What the player last confirmed, or null when unknown (a new start, a failed write): the level for an
+ * ordinary player; for a leading one, which keeps a mute of its own, its volume and mute together
+ * (`volumeKeyOf`), so a volume moved while muted is still sent.
+ */
+let appliedVolume: number | string | null = null;
 /** The level of the write in flight, or null when none is: at most one is sent at a time. */
 let sendingVolume: number | null = null;
 /** A level asked for while a write was in flight (a slider drag); sent when that write returns. */
@@ -134,6 +146,7 @@ let seenQueueRevision: string | null = null;
 /** When the listener last changed the volume / the loop mode here (performance.now). */
 let localVolumeChangeAt = 0;
 let localLoopChangeAt = 0;
+let localQualityChangeAt = 0;
 /** Set while a leading player's own state is written into the app's settings: no echo back. */
 let adoptingPlayerState = false;
 const listeners = new Set<(event: ExternalPlaybackEvent) => void>();
@@ -359,13 +372,20 @@ const adoptLeadingPlayerState = (current: ExternalSession, status: ProviderExter
         if (typeof status.volume === 'number' && Number.isFinite(status.volume) && sendingVolume === null && now - localVolumeChangeAt > LOCAL_CHANGE_HOLD_MS) {
             const volume = Math.min(1, Math.max(0, status.volume));
             const muted = status.muted === true;
-            appliedVolume = muted ? 0 : volume;
+            appliedVolume = volumeKeyOf(volumeWrite(volume, muted), true);
             if (Math.abs(settings.volume - volume) > 0.001) settings.handleSetVolume(volume);
             if (settings.isMuted !== muted) settings.handleSetMuted(muted);
         }
         if (status.loopMode && now - localLoopChangeAt > LOCAL_CHANGE_HOLD_MS) {
             appliedLoopMode = status.loopMode;
-            if (settings.loopMode !== status.loopMode) settings.handleSetLoopMode(status.loopMode);
+            // Quietly: the listener did not press the repeat button, so no toast says it changed.
+            if (settings.loopMode !== status.loopMode) settings.handleSetLoopModeQuietly(status.loopMode);
+        }
+        // The player's quality setting, in the app's levels: taken only where it is not already what the
+        // app's preference resolves to for this provider (one preference serves every provider).
+        if (status.quality && now - localQualityChangeAt > LOCAL_CHANGE_HOLD_MS
+            && omni.resolveAudioQualityForSong(current.song, settings.audioQuality) !== status.quality) {
+            settings.setAudioQuality(status.quality);
         }
     } finally {
         adoptingPlayerState = false;
@@ -415,9 +435,15 @@ const applyStatus = (status: ProviderExternalPlaybackStatus, sampledAtMs: number
         // A leading player moved on by itself (its end, or a step in its own window): the app follows
         // it, once for each track it moves to, and leaves it sounding.
         if (current.leads) {
-            if (current.followingMediaId !== status.mediaId) {
+            const now = performance.now();
+            current.followingStatus = status;
+            if (current.followingMediaId !== status.mediaId || now - current.followingAt > FOLLOW_RETRY_MS) {
+                const again = current.followingMediaId === status.mediaId;
                 current.followingMediaId = status.mediaId;
-                console.info('[ExternalPlayback] the leading player moved to another track: following it');
+                current.followingAt = now;
+                console.info(again
+                    ? '[ExternalPlayback] the leading player is still on the track it moved to: following it again'
+                    : '[ExternalPlayback] the leading player moved to another track: following it');
                 emit({ type: 'player-moved', song: current.song, status });
             }
             return;
@@ -437,6 +463,7 @@ const applyStatus = (status: ProviderExternalPlaybackStatus, sampledAtMs: number
     current.qualityLabel = typeof status.qualityLabel === 'string' && status.qualityLabel ? status.qualityLabel : null;
     if (current.leads) {
         current.followingMediaId = null;
+        current.followingStatus = null;
         current.rate = typeof status.rate === 'number' && Number.isFinite(status.rate) && status.rate > 0 ? status.rate : 1;
         if (current.announced) adoptLeadingPlayerState(current, status);
     }
@@ -584,6 +611,11 @@ const volumeWrite = (rawVolume: number, muted: boolean): VolumeWrite => {
     return { level: muted ? 0 : volume, volume, muted };
 };
 
+/** What a write is told apart by: the level, or for a leading player the volume and the mute. */
+const volumeKeyOf = (write: VolumeWrite, leads: boolean): number | string => (
+    leads ? `${write.volume}|${write.muted ? 'muted' : 'on'}` : write.level
+);
+
 /** The app's own volume as a linear level for the external player: muted is 0. */
 const settingsVolume = (): VolumeWrite => {
     const { volume, isMuted } = useAudioSettingsStore.getState();
@@ -606,7 +638,8 @@ export function setExternalPlaybackVolume(requested: number | VolumeWrite = sett
     }
     wantedVolume = null;
     const { level } = write;
-    if (appliedVolume === level) return;
+    const key = volumeKeyOf(write, current.leads);
+    if (appliedVolume === key) return;
     sendingVolume = level;
     const epoch = volumeEpoch;
     const sent = current.leads
@@ -614,7 +647,7 @@ export function setExternalPlaybackVolume(requested: number | VolumeWrite = sett
         : omni.setExternalPlaybackVolume(current.song, level);
     void sent.then(() => {
         if (epoch !== volumeEpoch) return;
-        appliedVolume = level;
+        appliedVolume = key;
         volumeFailureNoted = false;
     }, error => {
         appliedVolume = null;
@@ -668,7 +701,7 @@ export async function beginExternalPlayback(song: SongResult, startSec = 0, cont
     session = {
         song, songKey, attempt, clock, durationSec,
         announced: false, playing: false, starting: false, sampledPosition: Math.max(0, startSec), prefetchReady: false, live: false, ended: false, foreign: false, handedOver: false, preparedQueueKey: '', positionRevision: 0, seekPending: false, seeking: false,
-        leads, rate: 1, followingMediaId: null, qualityLabel: null,
+        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null,
     };
     failureNoted = false;
     externalMediaShim.beginTrack(songKey);
@@ -755,7 +788,7 @@ export async function adoptExternalPlayback(song: SongResult): Promise<boolean> 
     session = {
         song, songKey, attempt, clock, durationSec,
         announced: false, playing: false, starting: false, sampledPosition: null, prefetchReady: false, live: false, ended: false, foreign: false, handedOver: false, preparedQueueKey: '', positionRevision: 0, seekPending: false, seeking: false,
-        leads, rate: 1, followingMediaId: null, qualityLabel: null,
+        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null,
     };
     failureNoted = false;
     externalMediaShim.beginTrack(songKey);
@@ -881,6 +914,8 @@ export function reclaimExternalPlayback(reason: string): void {
  */
 export function releaseUnclaimedExternalTrack(song: SongResult, reason: string): void {
     if (!omni.canPlayExternally(song)) return;
+    // A leading player plays on by its own queue: the app takes up what it plays (watchPlayer), it is not stopped.
+    if (omni.leadsExternalPlayback(song)) return;
     if (isExternalRoute() && session && playsInSamePlayer(session.song, song)) return;
     console.info('[ExternalPlayback] stopping the player nobody took over', { reason, songKey: getPlaybackSongKey(song) });
     void omni.pauseExternalPlayback(song).catch(error => {
@@ -1001,6 +1036,18 @@ export const seekExternalPlayback = (timeSec: number, { resume = false }: { resu
     return true;
 };
 
+/**
+ * Whether a follow the app was told of (`player-moved` for `from`) still stands now that its read is
+ * back: the route still shows `from` and the leading player is still on `to`. A listener's own play
+ * meanwhile, or the player moving on again, makes it stale.
+ */
+export function isLeadingFollowCurrent(from: SongResult, to: SongResult): boolean {
+    const current = session;
+    if (!current?.leads || current.handedOver || !isExternalRoute()) return false;
+    if (current.songKey !== getPlaybackSongKey(from) || !current.followingStatus) return false;
+    return omni.isExternalPlaybackStatusForSong(to, current.followingStatus);
+}
+
 /** Whether the route is on a leading player's track: its queue and play mode are the player's. */
 export const isLeadingExternalRoute = () => isExternalRoute() && session?.leads === true && !session.handedOver;
 
@@ -1038,7 +1085,10 @@ export const installExternalPlayback = (): void => {
             localVolumeChangeAt = performance.now();
             setExternalPlaybackVolume();
         }
-        if (state.audioQuality !== previous.audioQuality) syncLeadingQuality();
+        if (state.audioQuality !== previous.audioQuality) {
+            localQualityChangeAt = performance.now();
+            syncLeadingQuality();
+        }
     });
     usePlaybackStore.subscribe((state, previous) => {
         if (ownWriteDepth > 0) return;

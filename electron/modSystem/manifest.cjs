@@ -146,9 +146,13 @@ const parseHostRange = (range) => {
     return comparators;
 };
 
+// The LX fork is versioned as the upstream release it is built on plus `-lx.N` (0.7.28-lx.1): it
+// hosts mods as that upstream release does, so a mod's folia range is checked against that version.
+const hostRangeVersion = (version) => String(version ?? '').trim().replace(/-lx\.[0-9]+$/, '');
+
 const satisfiesHostRange = (version, range) => {
     const comparators = parseHostRange(range);
-    const parsed = parseVersion(version);
+    const parsed = parseVersion(hostRangeVersion(version));
     if (!comparators || !parsed) {
         return false;
     }

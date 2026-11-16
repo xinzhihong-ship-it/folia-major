@@ -20,7 +20,7 @@ export const PlaybackSignalPathButton: React.FC = () => {
         <div className="grid min-w-0 px-1 py-2">
             <QuickTile
                 kind="open"
-                lit={summary === 'nativePassthrough'}
+                lit={externalPlayer === null && summary === 'nativePassthrough'}
                 icon={<Route size={18} />}
                 label={verdict
                     ? t('hifi.player.signalPathTile', { verdict })

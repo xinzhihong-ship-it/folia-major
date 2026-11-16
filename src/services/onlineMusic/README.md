@@ -96,6 +96,28 @@ Apple Music 的推荐能力已接入个人 FM（Apple personal station 持续补
 直播作为单个外部播放项目，无歌曲进度和拖动；卡片与曲目读取都经 Omni。真实中国大陆会话中，个人 FM
 取歌与播放时间推进已通过，直播列表为空，直播出声尚未实测。详细范围见 `electron/appleMusic/README.md`。
 
+### 洛雪音乐（桌面端，播放器主导）
+
+洛雪音乐增强版开着「Folia 对接」时，在本机 127.0.0.1 上开一个带令牌的接口，连接文件写在系统应用数据目录的
+`lx-music-folia-link/connection.json`。主进程的 `electron/lxmusic/lxmusicApiBridge.cjs` 读它、带令牌请求、订阅
+洛雪的事件流，令牌不进渲染进程。平台在 `lxmusic/`：搜歌（可按洛雪的平台收窄，`search.getScopes`）、我的列表、
+我的收藏、分享歌单（`catalog.openSharedCollection`）、歌词都问洛雪，播放由洛雪完成。
+
+播放同样走 `external` 路线，但播放器声明了 `externalPlayback.leadsPlayback`（「播放器主导」，路线本身不写平台名）：
+
+- 队列、播放模式、音量、静音、音质以播放器为准，读到的写进 Folia 的设置（不回写），Folia 这边改了再发给播放器；
+  刚改过的两秒内播放器的旧答复不覆盖。
+- 播放器自己换了歌（放完、在它自己的窗口里切歌），路线发 `player-moved`，`useExternalPlaybackBridge` 经
+  `follow` 读到那首和它的队列，再经 `playSong` 换上（`play` 认出是接手，不叫播放器重放）。读回来时已经过时
+  （用的人点了别的、播放器又换了）就丢掉；没跟上的五秒后再提醒一次。放完一首不移动 Folia 的队列。
+- 上一首、下一首（用的人自己按的）交给播放器（`skip`）；队列照着播放器的（`queueRevision` 变了就重读）。
+  就地编辑队列不做并提示，「下一首播放」「加入队列」进播放器的稍后播放（`queueInPlayer`，
+  `components/app/playback/leadingPlayerQueue.ts`）。
+- 播放器在它自己的窗口里开播时，Folia 接过来、自己正在放的让出来（`watchPlayer`，设置「外部播放器开播时跟随」，
+  判断在 `components/app/playback/bridges/externalPlayerFollow.ts`）。
+
+接口两头的约定（操作、参数、状态字段）以洛雪的 `src/main/modules/foliaLink/ops.ts` 为准，版本见 `UPSTREAMS.md`。
+
 ## 接入一个新平台
 
 下面用 `foo` 代表新平台的 id。`OnlineProviderId` 是开放的字符串，不用改类型。
@@ -255,6 +277,7 @@ Apple Music 的推荐能力已接入个人 FM（Apple personal station 持续补
   探索页卡片的第二行，只在 Spotify 的页面上由适配器自己写（`spotify/spotifyExplore.ts` 的 `itemOf` / `songItem`，放进条目的 `subtitle`；界面 `exploreFace.ts` 的 `faceOf` 有 `subtitle` 就用它，没有就按各平台共用的老规则：有名字写名字，没有才写类型）：先写这是什么，再写是谁的，例如“歌曲 · 歌手名”“专辑 · 歌手名”“歌单”。原因是老规则在这里分不出东西：首页和“为你打造”的 115 张歌单卡片主人全是 Spotify，每张都只写“Spotify”；主人是 Spotify 时不写名字，是别人时照写。专辑卡片按 `albumType` 写发行形式：Spotify 把一两首歌的发行也当作专辑（`SINGLE`），卡片上写“单曲专辑”，另有 EP 和合辑；首页卡片和新发行带 `albumType`（实测），不带的按普通专辑写。歌手卡片不设 `subtitle`（老规则本来就写“歌手”）。应用自己的两栏（最近播放、再听一次）各平台共用，没有动。
   日志都以 `[Spotify]` 开头：主进程记登录状态的变化、失败的请求（错误码加 Spotify 的状态码或原话，地址和长串抹掉）、套餐变化；渲染进程记探索页每次读到的栏数和条目数、自带歌词有没有、失败的请求及耗时。
 - `appleMusic/appleMusicProvider.ts`：Apple Music adapter，仅桌面端；`appleMusic/appleMusicTransport.ts` 经受限 IPC 连接 `electron/appleMusic/companionClient.cjs`。播放是 `externalPlayback` 路线，不是音频地址。
+- `lxmusic/lxmusicProvider.ts`：洛雪音乐 adapter，仅桌面端；`lxmusic/lxmusicTransport.ts` 经受限 IPC 连接 `electron/lxmusic/lxmusicApiBridge.cjs`。播放是 `externalPlayback` 路线的「播放器主导」（`lxmusic/lxmusicPlayback.ts`）。
 - `netease/neteaseProvider.ts`：网易云 adapter，归一化到 Omni contract。
 - `netease/neteaseOldAccountCache.ts`：账号快照之前的版本存的网易云账号（四个缓存键：用户、歌单、喜欢的 id、云盘入口），现在没有代码再写它们。磁盘上没有快照时由 adapter 的 `auth.oldKeptAccount` 读出来，由 `account/accountRead.ts` 存成快照之后再由 `auth.forgetOldKeptAccount` 删掉（快照存不上就留着，下次启动再存），账号离开时（退出登录、登录失效）也删；清缓存不删它们。网易云的 `auth.getLoginStatus` 只在网易云明说时答“没人”：回答的码是 301、401、403，或是 200 却没有用户；别的回答（本地服务连不上网易云时的 502、网易云的 5xx、风控的 -462、没有码的 HTTP 错误）都报 `unavailable`，登录留着（2026-10-22）。
 - `netease/neteaseExplore.ts`：网易云的探索页（`createNeteaseExplore`，由 `netease/neteaseProvider.ts` 把自己的归一化函数交给它；请求都在 `src/services/onlineMusic/netease/netease.ts` 的 `// --- Explore ---` 一组里）。分三段，列表滚到哪段才向网易云要哪段。（1）第一页：网易云手机端首页的栏目（`/homepage/block/page`，带 `refresh`），标题用网易云自己的；登录后最前面加“每日推荐”（`/recommend/songs`），栏目后面加“每日推荐歌单”（`/recommend/resource`）；最后是“排行榜”（`/toplist` 的全部榜单，卡片第二行是网易云写的更新频率）。（2）首页后面的栏目，网易云给了 `cursor` 才有，最多再读 6 页。（3）应用自己做的栏，一页一页给：“与《某首歌》相似”（`/simi/song`，一页 3 栏，一次从头读最多 9 栏；拿来问的歌依次是听者在应用里听过的 `listened`、账号的每日推荐、首页栏目里的歌，没问过的先问，都问过了先问最久以前问过的）、“新歌速递”（`/top/song`）和“新碟上架”（`/album/new`）、四个官方榜的歌曲（`/playlist/track/all`，标题是榜单自己的名字）、“热门歌单”（`/top/playlist`）。首页栏目只认三种条目：歌曲、歌单、专辑；播客、视频、直播、数字专辑这些不显示，一个栏里一条能显示的都没有就整栏不要。另外去掉两种栏：排行榜（`HOMEPAGE_BLOCK_TOPLIST`，页面上已有自己读的榜单）和账号自己的收听记录（代码里含 `RECENT` / `HISTORY`，或标题以“最近”开头）。栏目 id 是 `netease-block-<blockCode>`，所以同一个栏目每次读到都是同一栏，标题变了（“猜你喜欢的「欧美」好歌”换成别的语种）也认得。“换一批”怎么换到新内容：网易云的页面在从头读的那一页上声明 `refreshReadsAnew`（`ProviderExplorePage` 的字段，见 `EXPLORE_ADAPTER.md` 规则 2），所以每次“换一批”探索页都把整页从头重读（读到之前读过的那一页为止），不走各栏的游标；每一栏一次读取只交一批，最多 12 条。原因：探索页默认只在所有栏都换不出新条目时才重读（`useExploreFeedStore.ts` 的 `exchanged`），而网易云有几种栏只有重读才换得了：首页那个每次都重新挑、连标题一起换的栏（标题只有重读时才换），相似栏（一首歌只有 5 首相似歌曲，要换只能换一首歌来问）；2026-10-09 之前“换一批”走各栏的游标、一次读取给 4 批，这几种栏就在 4 次“换一批”里有 3 次不变。现在：首页栏目和整份读回来的列表（每日推荐、每日歌单、排行榜、新歌速递）从网易云这次给的全部条目里先交这一栏还没交过的，再交最久以前交过的（`handOut`），所以内容不变的列表从头走到尾才回到开头，超过一批的不会连续两次交同一批；不超过一批、网易云又答得和上次一样的栏保持不变。翻页的列表（新碟 500 张、热门歌单 683 个、榜单歌曲）每次读取按 offset 接着上次停下的地方要一批，到头后从头再来。相似栏每次读取换一批歌来问。“更多”（栏自己的游标，`getSectionItems`）只把这一栏接着展开，不换内容，和“换一批”是两回事：列表比交出的一批长的栏才有。首页栏目和整份读回来的列表按 `handOut` 的顺序每按一次再给 12 条，给完整个列表为止，不发请求；翻页的列表从已显示的最后一条往后再要一批，到列表末尾为止。“更多”展开过的条目算这一次读取交过的：下一次“换一批”先给没展开到的，翻页的列表从展开到的地方接着要；整个列表都展开过，就从头再来。相似栏和不超过一批的栏没有“更多”。上一次读取的游标一律答空，不发请求。代价：“换一批”一次的请求数是整页读过的全部请求（读到底时约 20 个）。每次重读，每一栏记一行日志 `[Netease] Explore refresh: <栏 id> <上一次读取里没有的条数>/<这次交出的条数>`（上一次读取里“更多”展开过的也算有过）；“更多”每按一次记一行 `[Netease] Explore shelf <栏 id>: <条数> further entries from place <位置>`。各栏交过哪些条目、相似栏问过哪些歌，记在各平台共用的 `exploreReads.ts` 里（`createHandedOut`，见 `EXPLORE_ADAPTER.md` 规则 10；每栏最多记 5000 个，所以一个条目离开网易云的列表、后来又回来时仍算交过，排在没交过的后面）；翻页的列表读到哪里由 adapter 自己记。都只在内存里，只按栏和列表记；adapter 只知道有没有登录（`hasAccountSession`），一次读取发现从游客变成登录或反过来就另起一份记录；每次读取带着自己开始时的那一份，所以登录那一刻还在路上的游客读取不会写进账号的记录。两个账号之间没有以游客身份读过一次时分不出来：新账号的第一次读取会按上一个账号的记录排顺序、记日志。未登录时不请求“每日推荐”和“每日推荐歌单”（游客也会拿到 3 首歌、6 个歌单，但人人相同），其余照常。只在登录时才有的栏在网易云不给内容时（比如登录失效，答 301）不显示。第一页的几个请求只要有一个读到就出页面，全都读不到才报错。实测（2026-10-08，游客身份，每个接口一次）：首页 3 栏（12 个歌单、12 首歌、6 首新歌加 5 张新碟），没有后续页；`/simi/song` 不管 `limit` 传多少都只给 5 首。实测（2026-10-09，游客身份，同一个请求连要两次以上，共 38 个请求）：首页 12 秒内连要 6 次，“猜你喜欢”那一栏（`HOMEPAGE_BLOCK_STYLE_RCMD`）每次都是另外 12 首歌，标题 6 次里有 5 种；“推荐歌单”前 3 次相同、后 3 次是另外 12 个；“新歌新碟”6 次完全相同；`refresh` 传字符串 true、布尔 true、false 没有看出差别。`/simi/song` 带 `offset=5` 还是同样 5 首。`/top/song`、`/album/new`、`/top/playlist`、`/personalized`、`/personalized/newsong` 同一个请求连要两次，结果和顺序都相同；`/album/new` 和 `/top/playlist` 的 `limit`、`offset` 有效。量到但没有用上的：`/top/song` 的 `type` 7 和 96 各 100 首，和 `type=0` 的 100 首没有重合；`/top/playlist` 带 `cat=华语` 共 1945 个，前 48 个和不分类的前 48 个没有重合，`order=new` 一个都不给；`/top/playlist/highquality` 共 402 个，`before` 能翻页；`/personalized?limit=100` 给 100 个。没有实测的（需要登录账号核对）：登录后首页有哪些栏目和代码、`cursor` 翻页、登录后首页再要一次各栏换不换、收听记录栏的代码。每次读取的日志（`[Netease] Explore page: ...`）会列出读到的栏数、去掉的栏和原因。

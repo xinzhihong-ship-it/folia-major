@@ -32,7 +32,8 @@ const CODE_MAP = {
     'unknown-op': 'unsupported',
     'unknown-source': 'unsupported',
     'not-playable': 'not-playable',
-    'not-found': 'not-playable',
+    // 列表里没有这首、歌单是空的、列表已经删了：不是没有音源
+    'not-found': 'unavailable',
     unavailable: 'unavailable',
     timeout: 'network',
     failed: 'invalid-response',
@@ -95,9 +96,12 @@ function createLxmusicApiBridge({
     onEvent = () => {},
     warn = console.warn,
     info = console.info,
+    eventsRetryMs = EVENTS_RETRY_MS,
 } = {}) {
     let events = null;
     let eventsTimer = null;
+    /** 正在读连接文件准备连事件流：同时只开一条 */
+    let eventsOpening = false;
     let lastConnected = null;
 
     const isLinked = () => store.get(LINKED_KEY) === true;
@@ -198,11 +202,19 @@ function createLxmusicApiBridge({
     };
 
     const openEvents = async () => {
+        if (events || eventsOpening || !isLinked()) return;
+        eventsOpening = true;
+        let connection;
+        try {
+            connection = await readConnection();
+        } finally {
+            eventsOpening = false;
+        }
+        // 读连接文件的时候断开了连接（unlink）或已经开了一条：不再开
         if (events || !isLinked()) return;
-        const connection = await readConnection();
         if (!connection) {
             setConnected(false);
-            scheduleEvents(EVENTS_RETRY_MS);
+            scheduleEvents(eventsRetryMs);
             return;
         }
         const req = httpModule.request({
@@ -245,7 +257,7 @@ function createLxmusicApiBridge({
         const closed = () => {
             if (events !== req) return;
             events = null;
-            scheduleEvents(EVENTS_RETRY_MS);
+            scheduleEvents(eventsRetryMs);
         };
         req.on('error', closed);
         req.on('close', closed);

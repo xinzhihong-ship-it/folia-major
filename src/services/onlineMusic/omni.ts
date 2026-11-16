@@ -1309,6 +1309,11 @@ export const omni = {
         return audioQualityFor(providerId, preference);
     },
 
+    // The level the song's provider is asked for under the preference (`resolveAudioQuality` by song).
+    resolveAudioQualityForSong(song: SongResult, preference: AudioQualityPreference): AudioQualityPreference {
+        return audioQualityFor(providerForSong(song).id, preference);
+    },
+
     async getAudioSource(song: SongResult, quality: AudioQualityPreference): Promise<OmniAudioSource | null> {
         const provider = providerForSong(song);
         const level = audioQualityFor(provider.id, quality);

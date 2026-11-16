@@ -12,6 +12,7 @@ import { omni } from '../../../../services/onlineMusic/omni';
 import { announceExternalPlayback, beginExternalPlayback, isExternalRoute, stepLeadingExternalPlayer, yieldExternalPlayback } from '../../../../services/onlineMusic/externalPlayback';
 import { getCachedSongCoverUrl, hasCachedSongAudio } from '../../../../services/onlineMusic/resourceCache';
 import { queueInLeadingPlayer, refuseLeadingQueueEdit, songsForLeadingPlayer } from '../leadingPlayerQueue';
+import { isListenerNextStep } from './nextTrackStep';
 import { getPrefetchedData, invalidateAndRefetch, prefetchNearbySongs, refreshPrefetchAfterQueueEdit } from '../../../../services/prefetchService';
 import { getLocalSong } from '../../../../services/db';
 import { retireBlobUrl } from '../../../../services/playbackBlobUrls';
@@ -339,7 +340,7 @@ export function usePlaybackQueueController({
         // 外部播放器主导：加进它自己的队列（「稍后播放」），应用的队列等它照回来
         const forPlayer = context === 'main' ? songsForLeadingPlayer(songs.filter(song => !isSongUnavailable(song))) : null;
         if (forPlayer) {
-            queueInLeadingPlayer(forPlayer, addBehavior === 'next' ? 'next' : 'end', t);
+            queueInLeadingPlayer(forPlayer, addBehavior === 'next' ? 'next' : 'end', t, { quiet: options?.suppressToast === true });
             return { changed: false, deduplicated: false, affectedCount: forPlayer.length, currentSong: live.currentSong, baseQueue: live.playQueue, queue: live.playQueue, affectedSongs: forPlayer, addBehavior };
         }
 
@@ -1348,10 +1349,8 @@ export function usePlaybackQueueController({
         if (isNowPlayingStageActive) return;
         // A player that keeps its own queue and play mode moves on by itself: the listener's step is
         // asked of it, and the app follows the track it moves to. Automatic steps (a failure's skip)
-        // still pick from the queue here, which mirrors the player's.
-        const automaticStep = options?.allowStopOnMissing || options?.playedToEnd || options?.fromSong
-            || options?.isAutomixAdvance || options?.unavailableSkipCount !== undefined;
-        if (!automaticStep && stepLeadingExternalPlayer('next')) return;
+        // still pick from the queue here, which mirrors the player's (nextTrackStep.ts).
+        if (isListenerNextStep(options) && stepLeadingExternalPlayer('next')) return;
         // The FM top-up below waits for the radio: a whole-queue write during that wait has ended FM.
         const queueWritesAtStart = wholeQueueWritesSoFar();
 

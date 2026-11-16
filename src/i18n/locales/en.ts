@@ -3766,7 +3766,7 @@ export default {
     "shuffleRoundNoRepeat": "Shuffle in rounds",
     "shuffleRoundNoRepeatDesc": "When you shuffle the queue or shuffle-play, songs you've already heard this round go after the ones you haven't. With list loop on, a finished round is shuffled again on its own. Only shuffled queues are tracked; off, shuffling works as before.",
     "followExternalPlayer": "Follow the external player",
-    "followExternalPlayerDesc": "When an external player that keeps its own queue starts a song in its own window and Folia is not playing one of its own, Folia takes that song up and shows its lyrics.",
+    "followExternalPlayerDesc": "When an external player that keeps its own queue starts a song in its own window, Folia takes that song up and shows its lyrics, stopping what it was playing.",
     "audioOutputDevice": "Current Output Device",
     "audioOutputRefresh": "Refresh",
     "audioOutputUnsupported": "This environment does not support switching audio output devices.",

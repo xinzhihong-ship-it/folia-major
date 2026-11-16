@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { getNavidromeConfig, navidromeApi } from '../services/navidromeService';
 import type { HomeViewTab, LocalSong, SongResult, UnifiedSong } from '../types';
 import { DEFAULT_ONLINE_PROVIDER_ID } from '../types/onlineMusic';
-import type { OmniCollection, OmniSearchKind, OnlineProviderId } from '../types/onlineMusic';
+import type { OmniCollection, OmniSearchKind, OnlineProviderId, ProviderSearchScope } from '../types/onlineMusic';
 import {
     applyLocalLibraryEntityDisplay,
     buildUnifiedLocalSong,
@@ -80,10 +80,10 @@ interface SearchNavigationState {
      * 所以这里不提供「记一条」的动作，界面只能读、删一条或清空。
      */
     searchHistory: string[];
-    /** 在线平台的单曲搜索收窄到的那一部分（平台 id → 部分的 id）；没有的是全部。 */
-    searchScopes: Record<string, string>;
+    /** 在线平台的单曲搜索收窄到的那一部分（平台 id → 那一部分，带名字：读不到平台的列表时也能显示）；没有的是全部。 */
+    searchScopes: Partial<Record<string, ProviderSearchScope>>;
     /** 换一个平台的单曲搜索范围（null 是全部）；调用方接着重新搜。 */
-    setSearchScope: (providerId: OnlineProviderId, scope: string | null) => void;
+    setSearchScope: (providerId: OnlineProviderId, scope: ProviderSearchScope | null) => void;
     forgetSearchHistoryQuery: (query: string) => void;
     clearSearchHistory: () => void;
     setHomeViewTab: (tab: HomeViewTab) => void;
@@ -106,8 +106,8 @@ const getSearchCacheKey = (query: string, sourceTab: SearchSource, kind: SearchK
 );
 
 /** 这一次搜索收窄到的那一部分：只有在线平台的单曲搜索有，没选是空串（全部）。 */
-const scopeFor = (scopes: Record<string, string>, sourceTab: SearchSource, kind: SearchKind): string => (
-    kind === 'song' && sourceTab !== 'local' && sourceTab !== 'navidrome' ? scopes[sourceTab] ?? '' : ''
+const scopeFor = (scopes: Partial<Record<string, ProviderSearchScope>>, sourceTab: SearchSource, kind: SearchKind): string => (
+    kind === 'song' && sourceTab !== 'local' && sourceTab !== 'navidrome' ? scopes[sourceTab]?.id ?? '' : ''
 );
 
 /** 这个来源能搜的种类：在线平台问 omni，本地与 Navidrome 只有单曲。单曲总在第一个。 */
@@ -265,12 +265,20 @@ const readSearchHistory = (): string[] => {
     }
 };
 
-const readSearchScopes = (): Record<string, string> => {
+const isSearchScope = (value: unknown): value is ProviderSearchScope => {
+    if (typeof value !== 'object' || value === null) return false;
+    const { id, name } = value as { id?: unknown; name?: unknown };
+    return typeof id === 'string' && id !== '' && typeof name === 'string';
+};
+
+const readSearchScopes = (): Record<string, ProviderSearchScope> => {
     try {
         const raw = getStoredString(SEARCH_SCOPES_KEY, '');
         const parsed: unknown = raw ? JSON.parse(raw) : {};
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-        return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== ''));
+        return Object.fromEntries(Object.entries(parsed).flatMap(([providerId, scope]) => (
+            isSearchScope(scope) ? [[providerId, { id: scope.id, name: scope.name }] as const] : []
+        )));
     } catch (error) {
         console.warn('[SearchStore] Failed to restore search scopes:', error);
         return {};
@@ -309,9 +317,9 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
     searchScopes: readSearchScopes(),
     setSearchScope: (providerId, scope) => {
         const current = get().searchScopes;
-        if ((current[providerId] ?? null) === (scope || null)) return;
+        if ((current[providerId]?.id ?? null) === (scope?.id ?? null) && (current[providerId]?.name ?? null) === (scope?.name ?? null)) return;
         const next = Object.fromEntries(Object.entries(current).filter(([id]) => id !== providerId));
-        if (scope) next[providerId] = scope;
+        if (scope) next[providerId] = { id: scope.id, name: scope.name };
         try {
             setStoredString(SEARCH_SCOPES_KEY, JSON.stringify(next));
         } catch (error) {

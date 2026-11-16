@@ -241,6 +241,13 @@ describe('satisfiesHostRange', () => {
         expect(satisfiesHostRange(null, '>=0.7.0')).toBe(false);
         expect(satisfiesHostRange('0.7.8', 'latest')).toBe(false);
     });
+
+    it('takes the LX fork (upstream version plus -lx.N) as the upstream host it is built on', () => {
+        expect(satisfiesHostRange('0.7.28-lx.1', '>=0.7.0 <0.8.0')).toBe(true);
+        expect(satisfiesHostRange('0.7.28-lx.12', '0.7.28')).toBe(true);
+        expect(satisfiesHostRange('0.7.28-lx.1', '>=0.7.29')).toBe(false);
+        expect(satisfiesHostRange('0.7.28-beta.1', '>=0.7.0')).toBe(false);
+    });
 });
 
 describe('resolveLoadOrder', () => {

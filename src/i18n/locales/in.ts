@@ -3766,7 +3766,7 @@ export default {
     "shuffleRoundNoRepeat": "Acak per putaran",
     "shuffleRoundNoRepeatDesc": "Saat mengacak antrean atau memutar acak, lagu yang sudah didengar di putaran ini ditaruh setelah lagu yang belum. Dengan putar ulang daftar, putaran yang selesai diacak lagi otomatis. Hanya antrean yang diacak yang dilacak; jika mati, pengacakan seperti biasa.",
     "followExternalPlayer": "Ikuti pemutar eksternal",
-    "followExternalPlayerDesc": "Saat pemutar eksternal yang mengelola antreannya sendiri memulai lagu di jendelanya sendiri dan Folia tidak sedang memutar lagunya sendiri, Folia mengambil lagu itu dan menampilkan liriknya.",
+    "followExternalPlayerDesc": "Saat pemutar eksternal yang mengelola antreannya sendiri memulai lagu di jendelanya sendiri, Folia mengambil lagu itu dan menampilkan liriknya, menghentikan yang sedang diputar.",
     "audioOutputDevice": "Perangkat Output Saat Ini",
     "audioOutputRefresh": "Segarkan",
     "audioOutputUnsupported": "Lingkungan ini tidak mendukung penggantian perangkat output audio.",

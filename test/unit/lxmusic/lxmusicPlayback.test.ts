@@ -15,7 +15,7 @@ vi.mock('@/services/onlineMusic/lxmusic/lxmusicTransport', () => ({
     subscribeLxmusicEvents: vi.fn(() => () => {}),
 }));
 
-const { composeLxQueue, createLxmusicExternalPlayback, lxExternalStatusOf, lxLoopModeOf, lxQualityLabelOf } = await import('@/services/onlineMusic/lxmusic/lxmusicPlayback');
+const { composeLxQueue, createLxmusicExternalPlayback, lxExternalStatusOf, lxLoopModeOf, lxQualityLabelOf, lxQualityOf } = await import('@/services/onlineMusic/lxmusic/lxmusicPlayback');
 const { normalizeLxmusicSong } = await import('@/services/onlineMusic/lxmusic/lxmusicNormalize');
 
 const info = (id: string) => ({ id, name: id, singer: 'A', source: 'kw', interval: '03:00', meta: { albumName: '', picUrl: 'https://c/' + id } });
@@ -31,8 +31,13 @@ describe('LX Music status', () => {
     it('becomes what the external route reads', () => {
         expect(lxExternalStatusOf(state())).toEqual({
             mediaId: 'kw_1', isPlaying: true, positionMs: 1000, durationMs: 180000, ended: false,
-            rate: 1, volume: 0.5, muted: false, loopMode: 'all', queueRevision: '3', qualityLabel: 'FLAC',
+            rate: 1, volume: 0.5, muted: false, loopMode: 'all', queueRevision: '3', quality: 'lossless', qualityLabel: 'FLAC',
         });
+    });
+
+    it('leaves out what LX Music did not say, so nothing of the app is set from a guess', () => {
+        const status = lxExternalStatusOf({ musicId: 'kw_1', isPlay: true });
+        expect(status).toEqual({ mediaId: 'kw_1', isPlaying: true, positionMs: 0, durationMs: 0, ended: false, rate: 1 });
     });
 
     it('is loading, not playing, while LX Music fetches the song', () => {
@@ -52,6 +57,9 @@ describe('LX Music status', () => {
         expect(lxQualityLabelOf({ current: '320k', actual: 'flac' })).toBe('FLAC');
         expect(lxQualityLabelOf({ current: 'master' })).toBe('Master');
         expect(lxQualityLabelOf({})).toBeUndefined();
+        expect(lxQualityOf({ wanted: '320k' })).toBe('high');
+        expect(lxQualityOf({ wanted: 'master' })).toBe('hires');
+        expect(lxQualityOf({ wanted: 'local' })).toBeUndefined();
     });
 });
 
@@ -60,6 +68,7 @@ describe('LX Music queue', () => {
         const queue = composeLxQueue({ listId: 'love', isTempPlay: false, tempListId: null, list: [info('a'), info('b'), info('c')], playLater: [info('x')] }, 'b', null);
         expect(queue.map(song => song.id)).toEqual(['a', 'b', 'x', 'c']);
         expect(queue[0].sourceRef).toMatchObject({ providerData: { listId: 'love' } });
+        expect(queue[2].sourceRef).toMatchObject({ providerData: { later: true } });
     });
 
     it('puts a play-later current song first', () => {
@@ -95,6 +104,12 @@ describe('LX Music playback', () => {
         expect(playOps()).toEqual([{ target: 'songlist', text: 'link', source: 'wy', musicId: 'kw_1' }]);
     });
 
+    it('plays a play-later song from the play-later list, without changing the playing list', async () => {
+        const player = createLxmusicExternalPlayback();
+        await player.play(normalizeLxmusicSong(info('kw_1'), { later: true }), 0);
+        expect(playOps()).toEqual([{ target: 'later', musicInfos: [info('kw_1')], now: true }]);
+    });
+
     it('resumes the song LX Music already has instead of starting it again', async () => {
         requests.answers.set('status', state({ musicId: 'kw_1', positionMs: 5000, isPlay: false }));
         const player = createLxmusicExternalPlayback();
@@ -114,6 +129,32 @@ describe('LX Music playback', () => {
         requests.calls.length = 0;
         await player.play(target!.song, 0);
         expect(playOps()).toEqual([]);
+    });
+
+    it('plays a followed song for real once LX Music has moved on from it', async () => {
+        requests.answers.set('status', state({ musicId: 'kw_2', musicInfo: info('kw_2'), listId: 'love' }));
+        requests.answers.set('queue', { listId: 'love', isTempPlay: false, tempListId: null, list: [info('kw_1'), info('kw_2')], playLater: [] });
+        const player = createLxmusicExternalPlayback();
+        const target = await player.follow!(lxExternalStatusOf(state({ musicId: 'kw_2', musicInfo: info('kw_2') })));
+        requests.answers.set('status', state({ musicId: 'kw_3', musicInfo: info('kw_3'), listId: 'love' }));
+        await player.getStatus(target!.song);
+        expect(player.isPrepared!(target!.song)).toBe(false);
+        requests.calls.length = 0;
+        await player.play(target!.song, 0);
+        expect(playOps()).toEqual([{ target: 'list', listId: 'love', musicId: 'kw_2' }]);
+    });
+
+    it('asks once, when linked, what LX Music already plays as the app opens', async () => {
+        requests.answers.set('linkStatus', { linked: true });
+        const told: string[] = [];
+        createLxmusicExternalPlayback().watchPlayer!(status => told.push(status.mediaId));
+        await vi.waitFor(() => { expect(told).toEqual(['kw_9']); });
+
+        requests.calls.length = 0;
+        requests.answers.set('linkStatus', { linked: false });
+        createLxmusicExternalPlayback().watchPlayer!(status => told.push(status.mediaId));
+        await vi.waitFor(() => { expect(requests.calls.map(call => call.operation)).toEqual(['linkStatus']); });
+        expect(told).toEqual(['kw_9']);
     });
 
     it('sends the loop mode, quality, mute apart, next and play-later in LX Music terms', async () => {

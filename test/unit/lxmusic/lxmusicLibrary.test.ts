@@ -61,6 +61,13 @@ describe('LX Music liked songs', () => {
         expect(await lxmusicLibrary.getLikedSongIds?.('lxmusic-local')).toEqual({ ids: ['kw_1', 'tx_2'], whole: true });
     });
 
+    it('counts the liked list so a change made in LX Music is read again when the app is returned to', async () => {
+        requests.answers.set('likedIds', ['kw_1', 'tx_2', 'wy_3']);
+        expect(await lxmusicLibrary.getLikedSongCount?.('lxmusic-local')).toBe(3);
+        requests.answers.set('likedIds', null);
+        expect(await lxmusicLibrary.getLikedSongCount?.('lxmusic-local')).toBeNull();
+    });
+
     it('throws rather than answer an empty whole list when the reply is not a list', async () => {
         requests.answers.set('likedIds', { oops: true });
         await expect(lxmusicLibrary.getLikedSongIds?.('lxmusic-local')).rejects.toMatchObject({ code: 'invalid-response' });

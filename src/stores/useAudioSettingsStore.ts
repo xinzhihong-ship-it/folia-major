@@ -59,7 +59,7 @@ export const SHUFFLE_ROUND_NO_REPEAT_KEY = 'folia_shuffle_round_no_repeat';
 
 /**
  * 外部播放器自己开始放歌时跟随：自己管队列的外部播放器（externalPlayback 的 leadsPlayback）在它自己的窗口里
- * 开始放一首、而 Folia 没在放自己的歌时，Folia 换上那首、显示歌词（useExternalPlaybackBridge）。默认开。
+ * 开始放一首时，Folia 换上那首、显示歌词，自己正在放的歌让出来（externalPlayerFollow.ts）。默认开。
  */
 export const FOLLOW_EXTERNAL_PLAYER_KEY = 'folia_follow_external_player';
 
@@ -287,6 +287,8 @@ export type AudioSettingsState = {
     handleToggleMute: () => void;
     /** Sets the repeat mode and toasts it like the repeat button; the mode already in effect is a no-op. */
     handleSetLoopMode: (mode: 'off' | 'all' | 'one') => void;
+    /** The loop mode as a player that keeps its own reported it: saved like the listener's, without the toast. */
+    handleSetLoopModeQuietly: (mode: 'off' | 'all' | 'one') => void;
     /** Steps the repeat button once; inside Personal FM the cycle skips loop-all, which has nothing to go round to there. */
     handleToggleLoopMode: (isFmMode?: boolean) => void;
 };
@@ -521,6 +523,11 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
             text: i18n.t(`player.${loopModeKey}`),
             nonce: Date.now(),
         });
+    },
+    handleSetLoopModeQuietly: (mode) => {
+        if (mode === get().loopMode) return;
+        setStoredString('player_loop_mode', mode);
+        set({ loopMode: mode });
     },
     handleToggleLoopMode: (isFmMode = false) => {
         get().handleSetLoopMode(nextLoopMode(get().loopMode, isFmMode));

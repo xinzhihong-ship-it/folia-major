@@ -71,6 +71,7 @@ import { currentTime } from '../../../../stores/motionSignals';
 import { resolveLocalSongLyrics } from '../../../../utils/lyrics/localSongLyrics';
 import { detectLyricFileIssues } from '../../../../utils/lyrics/lyricFileIssues';
 import { createLikePresses } from '../../../../utils/likePresses';
+import { refuseForeignQueueAdd } from '../leadingPlayerQueue';
 
 // src/components/app/playback/start/useLibraryPlaybackController.ts
 
@@ -620,6 +621,8 @@ export function useLibraryPlaybackController({
     }, [currentSong, lyrics, resolveLocalSongRecord, resolveOnlineSongLyricsState]);
 
     const handleLocalQueueAdd = useCallback(async (localSong: LocalSong) => {
+        // 外部播放器主导时，本地歌曲排不进它的队列（leadingPlayerQueue.ts）
+        if (refuseForeignQueueAdd(t)) return;
         const preparedLocalSong = await ensureLocalSongCoverAsset(localSong);
         const { unifiedSong } = await resolveLocalMetadataUI(preparedLocalSong, null);
         // The queue and the song as the store holds them after those waits, as the online add reads them

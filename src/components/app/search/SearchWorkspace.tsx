@@ -16,6 +16,7 @@ import SearchComposition from './SearchComposition';
 import SearchTabs, { useSearchSourceLabel } from './SearchTabs';
 import { useCollectionNavigationStore } from '../../../stores/useCollectionNavigationStore';
 import { useSearchSources } from './searchSources';
+import { useSearchScopes } from './useSearchScopes';
 import { collectToScratchpad } from '../../../stores/useScratchpadStore';
 import { canOpenPlaylistPickerFor, openAddSongsToPlaylist } from '../../../stores/useAddToPlaylistStore';
 import './search.css';
@@ -112,6 +113,13 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
     const resultCount = isCollectionKind ? collections.length : results.length;
     const { sources, activeProviderId } = useSearchSources(hasLocalSongs);
     const kinds = useMemo(() => getSearchKinds(searchSourceTab), [searchSourceTab]);
+    const { scopes, scope } = useSearchScopes(searchSourceTab, searchKind);
+    // 换了范围：记下，搜过词的话按新范围再搜一遍
+    const selectScope = useCallback((next: string | null) => {
+        if (searchSourceTab === 'local' || searchSourceTab === 'navidrome') return;
+        useSearchNavigationStore.getState().setSearchScope(searchSourceTab, next);
+        if (submittedQuery.trim()) onSubmitSearch(searchSourceTab, searchKind);
+    }, [onSubmitSearch, searchKind, searchSourceTab, submittedQuery]);
     const hasCollection = useCollectionNavigationStore(state => Boolean(state.snapshot?.stack.length));
     const getSourceLabel = useSearchSourceLabel();
     const collectTrack = useCallback((track: UnifiedSong) => {
@@ -205,6 +213,9 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
                             kind={searchKind}
                             onSelectSource={source => onSubmitSearch(source)}
                             onSelectKind={kind => onSubmitSearch(searchSourceTab, kind)}
+                            scopes={scopes}
+                            scope={scope}
+                            onSelectScope={selectScope}
                         />
 
                         <div className="search-meta">

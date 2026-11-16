@@ -211,7 +211,7 @@ describe('playSong and the current song (online)', () => {
         const unsubscribe = useStatusMessageStore.subscribe(state => { messages.push(state.message); });
         const { watch, queue } = mount();
         await queue.playSong(songA, [songA, songB]);
-        expect(env.externalStarts).toHaveBeenCalledWith(songA, 0);
+        expect(env.externalStarts).toHaveBeenCalledWith(songA, 0, { queue: expect.any(Array) });
         expect(watch.take().some(line => line.includes('wait audio source'))).toBe(false);
         expect(messages).not.toContainEqual(expect.objectContaining({ text: 'status.loadingSong' }));
         expect(messages).not.toContainEqual(expect.objectContaining({ text: 'status.preparingExternalPlayback' }));

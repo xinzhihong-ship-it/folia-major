@@ -49,6 +49,11 @@ const AUTH_MEMBERS: Record<string, string[]> = {
     fnmusic: [
         'checkLogin', 'describeLoginFailure', 'getLoginForm', 'getLoginStatus', 'getLoginTexts', 'logout', 'startLogin', 'submitLoginForm',
     ],
+    // 没有账号：表单只有一个「连接」按钮，连接过就记着，洛雪关着时也照样显示。
+    lxmusic: [
+        'checkLogin', 'describeLoginFailure', 'getLoginForm', 'getLoginStatus', 'getLoginTexts', 'logout', 'showsKeptAccountAtStart', 'startLogin',
+        'submitLoginForm',
+    ],
 };
 
 describe('the sign-in members of each built-in platform', () => {

@@ -1,6 +1,7 @@
 import type { CommandPaletteCommand } from '../types';
 import { defineCommand, createToggleCommand, createHomeTabCommand } from '../commandFactories';
 import { omni } from '../../../services/onlineMusic/omni';
+import { sharedListCommand } from './sharedListCommand';
 
 // src/components/command-palette/commands/navigationCommands.ts
 // Commands in the `navigation` group: moving between home tabs, the player, and window-level views.
@@ -69,5 +70,6 @@ export const navigationCommands: CommandPaletteCommand[] = [
         isAvailable: (context) => !context?.navigation.isWallpaperMode
             && context?.navigation.isWindowAlwaysOnTopSupported !== false,
         execute: (_input, context) => context.navigation.toggleMainWindowAlwaysOnTop(),
-    }
+    },
+    sharedListCommand,
 ];

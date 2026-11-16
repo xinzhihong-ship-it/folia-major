@@ -5,16 +5,25 @@ import type { SongResult } from '../../../src/types';
 // 队列变更里的拖拽移动（moveQueueSong）：写回播放 store 并持久化；没变或越界时什么都不做。
 // 「下一首播放」（moveQueueSongToNext）：当前那首在队尾时也落在它后面。
 // 每一次就地编辑都带着编辑前后的队列交给预取刷新（prefetchService.refreshPrefetchAfterQueueEdit）。
+// 外部播放器主导时（leadingPlayerQueue）：就地编辑不做，「下一首播放」交给播放器自己的队列。
 
 const mocks = vi.hoisted(() => ({
     setPlayQueue: vi.fn(),
     setStatusMessage: vi.fn(),
     refreshPrefetchAfterQueueEdit: vi.fn(),
+    refuseLeadingQueueEdit: vi.fn((): boolean => false),
+    songsForLeadingPlayer: vi.fn<(songs: SongResult[]) => SongResult[] | null>(() => null),
+    queueInLeadingPlayer: vi.fn(),
 }));
 
 vi.mock('../../../src/stores/usePlaybackStore', () => ({ setPlayQueue: mocks.setPlayQueue }));
 vi.mock('../../../src/stores/useStatusMessageStore', () => ({ setStatusMessage: mocks.setStatusMessage }));
 vi.mock('../../../src/services/prefetchService', () => ({ refreshPrefetchAfterQueueEdit: mocks.refreshPrefetchAfterQueueEdit }));
+vi.mock('../../../src/components/app/playback/leadingPlayerQueue', () => ({
+    refuseLeadingQueueEdit: mocks.refuseLeadingQueueEdit,
+    songsForLeadingPlayer: mocks.songsForLeadingPlayer,
+    queueInLeadingPlayer: mocks.queueInLeadingPlayer,
+}));
 
 const { createQueueMutations } = await import('../../../src/components/app/player-panel/createQueueMutations');
 
@@ -49,6 +58,40 @@ beforeEach(() => {
     mocks.setPlayQueue.mockReset();
     mocks.setStatusMessage.mockReset();
     mocks.refreshPrefetchAfterQueueEdit.mockReset();
+    mocks.queueInLeadingPlayer.mockReset();
+    mocks.refuseLeadingQueueEdit.mockReset();
+    mocks.refuseLeadingQueueEdit.mockImplementation(() => false);
+    mocks.songsForLeadingPlayer.mockReset();
+    mocks.songsForLeadingPlayer.mockImplementation(() => null);
+});
+
+describe('createQueueMutations while an external player leads playback', () => {
+    beforeEach(() => {
+        mocks.refuseLeadingQueueEdit.mockImplementation(() => true);
+        mocks.songsForLeadingPlayer.mockImplementation((songs: SongResult[]) => songs);
+    });
+
+    it('leaves the queue alone on remove, move to end, drag and whole-order writes', () => {
+        const { playQueue, persistLastPlaybackCache, mutations } = setup();
+        mutations.removeQueueSong(2);
+        mutations.moveQueueSongToEnd(1);
+        mutations.moveQueueSong(3, 1);
+        mutations.setQueueOrder([...playQueue].reverse());
+        expect(mocks.setPlayQueue).not.toHaveBeenCalled();
+        expect(persistLastPlaybackCache).not.toHaveBeenCalled();
+        expect(mocks.refreshPrefetchAfterQueueEdit).not.toHaveBeenCalled();
+    });
+
+    it('hands play-next to the player, one song or a batch, and refuses the other batch actions', () => {
+        const { playQueue, mutations } = setup();
+        mutations.moveQueueSongToNext(2);
+        expect(mocks.queueInLeadingPlayer).toHaveBeenLastCalledWith([playQueue[2]], 'next', expect.any(Function));
+        expect(mutations.applyQueueBatchOperation('next', [3, 1])).toBe(true);
+        expect(mocks.queueInLeadingPlayer).toHaveBeenLastCalledWith([playQueue[3], playQueue[1]], 'next', expect.any(Function));
+        expect(mutations.applyQueueBatchOperation('remove', [1])).toBe(false);
+        expect(mocks.queueInLeadingPlayer).toHaveBeenCalledTimes(2);
+        expect(mocks.setPlayQueue).not.toHaveBeenCalled();
+    });
 });
 
 describe('createQueueMutations.moveQueueSong', () => {

@@ -1385,7 +1385,7 @@ export default function App() {
         startExternalSong: () => startExternalSong(playSong),
     });
     useHifiPlaybackBridge({ handleNextTrack, playSong, shouldAutoPlayRef: shouldAutoPlay, isLyricsLoading, effectiveLoopMode, isFmMode });
-    useExternalPlaybackBridge({ handleNextTrack });
+    useExternalPlaybackBridge({ handleNextTrack, playSong });
     useNavidromeScrobbleReporter({
         audioRef,
         currentSong,

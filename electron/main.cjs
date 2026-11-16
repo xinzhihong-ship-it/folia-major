@@ -77,6 +77,7 @@ const { createQishuiMediaPolicy } = require('./qishui/mediaCors.cjs');
 const { createBodianApiBridge } = require('./bodian/bodianApiBridge.cjs');
 const { createBodianMediaPolicy } = require('./bodian/mediaCors.cjs');
 const { createYtmApiBridge } = require('./ytm/ytmApiBridge.cjs');
+const { createLxmusicApiBridge } = require('./lxmusic/lxmusicApiBridge.cjs');
 const { createCompanionClient } = require('./appleMusic/companionClient.cjs');
 const { createCompanionRequestHandler } = require('./appleMusic/companionIpc.cjs');
 const { createYtmSandbox } = require('./ytm/sandbox.cjs');
@@ -376,6 +377,13 @@ const qishuiMediaPolicy = createQishuiMediaPolicy();
 const fnMusicApiBridge = createFnmusicApiBridge({ store, safeStorage });
 const qishuiApiBridge = createQishuiApiBridge({ store, safeStorage, fetch: (url, options) => electronNet.fetch(url, options),
   onAudioSource: url => qishuiMediaPolicy.register(url),
+});
+// 洛雪音乐的「Folia 对接」：读洛雪的连接文件、带令牌请求它的本机接口；它推来的事件转给主窗口。
+const lxmusicApiBridge = createLxmusicApiBridge({
+  store,
+  onEvent: (event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lxmusic-event', event);
+  },
 });
 const bodianMediaPolicy = createBodianMediaPolicy();
 const bodianApiBridge = createBodianApiBridge({ store, safeStorage,
@@ -7466,6 +7474,12 @@ ipcMain.handle('bodian-api-request', (event, operation, params) => {
   }
   return bodianApiBridge.request(operation, params);
 });
+ipcMain.handle('lxmusic-api-request', (event, operation, params) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    return { ok: false, error: { code: 'unavailable', message: 'Untrusted LX Music request' } };
+  }
+  return lxmusicApiBridge.request(operation, params);
+});
 ipcMain.handle('ytm-api-request', (event, operation, params) => {
   if (!isTrustedMainWindowContents(event.sender)) {
     return { ok: false, error: { code: 'unavailable', message: 'Untrusted YouTube Music request' } };
@@ -7902,6 +7916,7 @@ ipcMain.handle('global-shortcuts-set', (event, accelerators) => {
 
 app.on('will-quit', () => {
   appleMusicClient.close();
+  lxmusicApiBridge.close();
   stageApi.dispose();
   globalShortcutController?.dispose();
   hifiSession.killSync();

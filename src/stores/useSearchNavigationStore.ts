@@ -16,6 +16,11 @@ import { getStoredString, setStoredString } from './storagePrimitives';
 const LAST_HOME_VIEW_TAB_KEY = 'last_home_view_tab';
 /** 搜索历史：字符串数组的 JSON，最近的在前。列表的规则（去重、淘汰）在 utils/searchHistory.ts。 */
 const SEARCH_HISTORY_KEY = 'folia_search_history_v1';
+/**
+ * 在线平台的单曲搜索收窄到哪一部分（平台声明了 search.getScopes，如一次搜好几家的平台）：平台 id → 选着的那一部分，
+ * 没有的是「全部」。记着上次的选择。
+ */
+const SEARCH_SCOPES_KEY = 'folia_search_scopes_v1';
 const DEFAULT_SEARCH_LIMIT = 30;
 export type SearchSource = OnlineProviderId | 'local' | 'navidrome';
 export type SearchReturnView = 'home' | 'player';
@@ -75,6 +80,10 @@ interface SearchNavigationState {
      * 所以这里不提供「记一条」的动作，界面只能读、删一条或清空。
      */
     searchHistory: string[];
+    /** 在线平台的单曲搜索收窄到的那一部分（平台 id → 部分的 id）；没有的是全部。 */
+    searchScopes: Record<string, string>;
+    /** 换一个平台的单曲搜索范围（null 是全部）；调用方接着重新搜。 */
+    setSearchScope: (providerId: OnlineProviderId, scope: string | null) => void;
     forgetSearchHistoryQuery: (query: string) => void;
     clearSearchHistory: () => void;
     setHomeViewTab: (tab: HomeViewTab) => void;
@@ -92,8 +101,13 @@ interface SearchNavigationState {
     loadMoreSearchResults: (payload: { deps: SearchExecutorDeps; }) => Promise<void>;
 }
 
-const getSearchCacheKey = (query: string, sourceTab: SearchSource, kind: SearchKind) => (
-    `${sourceTab}:${kind}:${query.trim().toLowerCase()}`
+const getSearchCacheKey = (query: string, sourceTab: SearchSource, kind: SearchKind, scope = '') => (
+    `${sourceTab}${scope ? `@${scope}` : ''}:${kind}:${query.trim().toLowerCase()}`
+);
+
+/** 这一次搜索收窄到的那一部分：只有在线平台的单曲搜索有，没选是空串（全部）。 */
+const scopeFor = (scopes: Record<string, string>, sourceTab: SearchSource, kind: SearchKind): string => (
+    kind === 'song' && sourceTab !== 'local' && sourceTab !== 'navidrome' ? scopes[sourceTab] ?? '' : ''
 );
 
 /** 这个来源能搜的种类：在线平台问 omni，本地与 Navidrome 只有单曲。单曲总在第一个。 */
@@ -188,8 +202,9 @@ const searchOnlineProviderSongs = async (
     query: string,
     limit: number,
     offset: number,
+    scope: string,
 ): Promise<SearchExecutionResult> => {
-    const page = await omni.searchProviderSongs(providerId, query, { limit, offset });
+    const page = await omni.searchProviderSongs(providerId, query, { limit, offset }, scope ? { scope } : undefined);
     return { results: page.items, collections: [], hasMore: page.hasMore, nextOffset: page.nextOffset, total: page.total };
 };
 
@@ -214,7 +229,8 @@ const executeSearch = async (
     kind: SearchKind,
     offset: number,
     limit: number,
-    deps: SearchExecutorDeps
+    deps: SearchExecutorDeps,
+    scope = '',
 ): Promise<SearchExecutionResult> => {
     if (sourceTab === 'local') {
         return searchLocalSongs(deps, query);
@@ -225,7 +241,7 @@ const executeSearch = async (
     }
 
     return kind === 'song'
-        ? searchOnlineProviderSongs(sourceTab, query, limit, offset)
+        ? searchOnlineProviderSongs(sourceTab, query, limit, offset, scope)
         : searchOnlineProviderCollections(sourceTab, kind, query, limit, offset);
 };
 
@@ -246,6 +262,18 @@ const readSearchHistory = (): string[] => {
     } catch (error) {
         console.warn('[SearchStore] Failed to restore search history:', error);
         return [];
+    }
+};
+
+const readSearchScopes = (): Record<string, string> => {
+    try {
+        const raw = getStoredString(SEARCH_SCOPES_KEY, '');
+        const parsed: unknown = raw ? JSON.parse(raw) : {};
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== ''));
+    } catch (error) {
+        console.warn('[SearchStore] Failed to restore search scopes:', error);
+        return {};
     }
 };
 
@@ -278,6 +306,19 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
     scrollTop: 0,
     searchCache: {},
     searchHistory: readSearchHistory(),
+    searchScopes: readSearchScopes(),
+    setSearchScope: (providerId, scope) => {
+        const current = get().searchScopes;
+        if ((current[providerId] ?? null) === (scope || null)) return;
+        const next = Object.fromEntries(Object.entries(current).filter(([id]) => id !== providerId));
+        if (scope) next[providerId] = scope;
+        try {
+            setStoredString(SEARCH_SCOPES_KEY, JSON.stringify(next));
+        } catch (error) {
+            console.warn('[SearchStore] Failed to save search scopes:', error);
+        }
+        set({ searchScopes: next });
+    },
     forgetSearchHistoryQuery: (query) => {
         const current = get().searchHistory;
         const next = withoutSearchHistoryQuery(current, query);
@@ -299,7 +340,7 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
     setSearchQuery: (query) => set({ searchQuery: query }),
     setSearchScrollTop: (scrollTop) => set(state => {
         // 滚的是按 submittedQuery 搜出来的那组结果；输入框里改了字也还是它。
-        const cacheKey = getSearchCacheKey(state.submittedQuery, state.searchSourceTab, state.searchKind);
+        const cacheKey = getSearchCacheKey(state.submittedQuery, state.searchSourceTab, state.searchKind, scopeFor(state.searchScopes, state.searchSourceTab, state.searchKind));
         const cached = state.searchCache[cacheKey];
         return {
             scrollTop,
@@ -314,7 +355,7 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
     // 旧的历史记录没有 kind：按当前的种类恢复。requestId 往前走一格：还在途的搜索或加载更多晚到时不再写进恢复出来的这一组。
     restoreSearch: ({ query, sourceTab, kind, returnView = 'home' }) => set(state => {
         const searchKind = resolveSearchKind(sourceTab, kind ?? state.searchKind);
-        const cached = state.searchCache[getSearchCacheKey(query, sourceTab, searchKind)];
+        const cached = state.searchCache[getSearchCacheKey(query, sourceTab, searchKind, scopeFor(state.searchScopes, sourceTab, searchKind))];
         return {
             requestId: state.requestId + 1,
             searchQuery: query,
@@ -386,7 +427,8 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
         });
 
         try {
-            const result = await executeSearch(trimmedQuery, sourceTab, searchKind, 0, get().limit, deps);
+            const scope = scopeFor(get().searchScopes, sourceTab, searchKind);
+            const result = await executeSearch(trimmedQuery, sourceTab, searchKind, 0, get().limit, deps, scope);
             // 被另一次提交或一次历史恢复作废了：回 false，调用方不再拿它压历史。作废它的那一次自己会导航；
             // 恢复时历史已经是恢复后的样子，再压一条就会把人拉回一个没有结果的搜索页。
             if (get().requestId !== requestId) {
@@ -404,7 +446,7 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
                 scrollTop: 0,
                 searchCache: {
                     ...state.searchCache,
-                    [getSearchCacheKey(trimmedQuery, sourceTab, searchKind)]: {
+                    [getSearchCacheKey(trimmedQuery, sourceTab, searchKind, scope)]: {
                         results: result.results,
                         collections: result.collections,
                         hasMore: result.hasMore,
@@ -463,7 +505,8 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
         set({ isLoadingMore: true, searchError: null });
 
         try {
-            const result = await executeSearch(searchQuery, searchSourceTab, searchKind, offset, limit, deps);
+            const scope = scopeFor(get().searchScopes, searchSourceTab, searchKind);
+            const result = await executeSearch(searchQuery, searchSourceTab, searchKind, offset, limit, deps, scope);
             if (get().requestId !== requestId) {
                 return;
             }
@@ -480,7 +523,7 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
                     isLoadingMore: false,
                     searchCache: {
                         ...state.searchCache,
-                        [getSearchCacheKey(searchQuery, searchSourceTab, searchKind)]: {
+                        [getSearchCacheKey(searchQuery, searchSourceTab, searchKind, scope)]: {
                             results,
                             collections,
                             hasMore: result.hasMore,

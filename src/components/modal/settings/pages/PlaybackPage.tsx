@@ -39,6 +39,7 @@ const O = {
     queueBehavior: option(BEHAVIOR, 'queueDefaultBehavior', 'options.queueDefaultBehavior'),
     autoSkipUnplayable: option(BEHAVIOR, 'autoSkipUnplayable', 'options.autoSkipUnplayable'),
     shuffleRoundNoRepeat: option(BEHAVIOR, 'shuffleRoundNoRepeat', 'options.shuffleRoundNoRepeat'),
+    followExternalPlayer: option(BEHAVIOR, 'followExternalPlayer', 'options.followExternalPlayer', { electronOnly: true }),
     preventSleep: option(BEHAVIOR, 'preventDisplaySleepDuringPlayback', 'options.preventDisplaySleepDuringPlayback', { electronOnly: true }),
     voiceInputPause: option(BEHAVIOR, 'voiceInputPause', 'options.voiceInputPause', { electronOnly: true, available: () => runsOnWindows() }),
 };
@@ -79,12 +80,14 @@ const PlaybackPage: React.FC = () => {
         queueBehavior: state.queueAddBehavior,
         autoSkipUnplayable: state.autoSkipUnplayable,
         shuffleRoundNoRepeat: state.shuffleRoundNoRepeat,
+        followExternalPlayer: state.followExternalPlayer,
         setMediaCache: state.handleToggleMediaCache,
         setFade: state.handleTogglePlaybackFade,
         setTranscode: state.handleToggleTranscodeFallback,
         setQueueBehavior: state.handleSetQueueAddBehavior,
         setAutoSkipUnplayable: state.handleToggleAutoSkipUnplayable,
         setShuffleRoundNoRepeat: state.handleToggleShuffleRoundNoRepeat,
+        setFollowExternalPlayer: state.handleToggleFollowExternalPlayer,
     })));
     const preventSleep = useDesktopSettingsStore(state => state.preventDisplaySleepDuringPlayback);
     const setPreventSleep = useDesktopSettingsStore(state => state.handleTogglePreventDisplaySleepDuringPlayback);
@@ -234,6 +237,11 @@ const PlaybackPage: React.FC = () => {
                 <Row option={O.shuffleRoundNoRepeat} note={t('options.shuffleRoundNoRepeatDesc')}>
                     <Toggle checked={audio.shuffleRoundNoRepeat} onChange={audio.setShuffleRoundNoRepeat} />
                 </Row>
+                {isElectron && (
+                    <Row option={O.followExternalPlayer} note={t('options.followExternalPlayerDesc')}>
+                        <Toggle checked={audio.followExternalPlayer} onChange={audio.setFollowExternalPlayer} />
+                    </Row>
+                )}
                 {isElectron && (
                     <Row option={O.preventSleep} hint={t('options.preventDisplaySleepDuringPlaybackDesc')}>
                         <Toggle checked={preventSleep} onChange={setPreventSleep} />

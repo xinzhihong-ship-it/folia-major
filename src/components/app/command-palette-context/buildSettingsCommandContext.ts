@@ -221,6 +221,9 @@ export const buildSettingsCommandContext = (
         toggleShuffleRoundNoRepeat: () => audio.handleToggleShuffleRoundNoRepeat(
             !useAudioSettingsStore.getState().shuffleRoundNoRepeat,
         ),
+        toggleFollowExternalPlayer: () => audio.handleToggleFollowExternalPlayer(
+            !useAudioSettingsStore.getState().followExternalPlayer,
+        ),
         canAutoScanLocalLibrary: isLocalLibraryAutoScanSupported,
         toggleLocalLibraryAutoScan: () => useLocalLibrarySettingsStore.getState().toggleAutoScan(),
         canReportPlayback: () => isPlaybackReportReady(),

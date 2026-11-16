@@ -703,6 +703,9 @@ export default {
     "songUnavailableTag": "已下架",
     "songVideoTag": "MV",
     "queueShuffled": "播放队列已打乱",
+    "leadingPlayerOwnsQueue": "这份队列跟着正在播放的外部播放器，请在播放器里调整顺序或删除歌曲",
+    "leadingPlayerCannotQueue": "这些歌放不进外部播放器的队列",
+    "leadingPlayerQueueFailed": "没能加进外部播放器的队列",
     "loopShuffleHint": "想找随机播放吗？",
     "loopShuffleHintAction": "点这里了解",
     "queueCleared": "播放队列已清空",
@@ -908,6 +911,7 @@ export default {
       "settings-help": { "title": "打开帮助", "description": "打开帮助和快捷键" },
       "ponder-current-page": { "title": "思索当前页面", "description": "打开当前页面的交互式介绍" },
       "provider-playback-setup": { "title": "平台播放设置", "description": "打开当前平台的播放配置清单" },
+      "open-shared-list": { "title": "打开分享的歌单", "description": "按分享链接或 ID 打开一张歌单" },
       "settings-options": { "title": "打开选项", "description": "打开设置中心" },
       "settings-now-playing-card-position": { "title": "调整卡片位置", "description": "拖动正在播放卡片到新的位置" },
       "settings-ai-provider": { "title": "AI 供应商设置", "description": "选择 AI 供应商和模型" },
@@ -1195,6 +1199,7 @@ export default {
       "settings-toggle-playback-fade": { "title": "暂停/播放淡入淡出", "description": "切换暂停和恢复播放时的短淡入淡出" },
       "settings-toggle-auto-skip-unplayable": { "title": "无法播放时自动跳过", "description": "切换歌曲受限或原因不明无法播放时是否倒计时跳到下一首" },
       "settings-toggle-shuffle-round-no-repeat": { "title": "一轮不重复洗牌", "description": "打开或关闭：洗牌时这一轮听过的歌排到后面，列表循环时整轮听完自动重洗" },
+      "settings-toggle-follow-external-player": { "title": "跟随外部播放器", "description": "打开或关闭：外部播放器在它自己的窗口里开始放歌时，Folia 换上那首" },
       "settings-toggle-bottom-subtitle-overlay": { "title": "切换底部字幕层", "description": "显示或隐藏整个底部字幕层" },
       "settings-cycle-subtitle-content-mode": { "title": "切换翻译字幕状态", "description": "在翻译、罗马音、罗马音加翻译之间切换副字幕内容" },
       "settings-subtitles": { "title": "字幕调节", "description": "底部字幕的行数和每行内容、字幕背景，以及副字幕" },
@@ -1679,6 +1684,8 @@ export default {
     "placeholderPlaylist": "搜索歌单...",
     "sources": "搜索来源",
     "kinds": "搜索种类",
+    "scopes": "搜索范围",
+    "scopeAll": "全部",
     "kindSong": "单曲",
     "kindAlbum": "专辑",
     "kindPlaylist": "歌单",
@@ -1916,6 +1923,8 @@ export default {
     "loginNoteBodian": "打开波点音乐 App 扫描二维码并确认登录",
     "loginTitleFnMusic": "登录飞牛音乐",
     "loginNoteFnMusic": "填入你的飞牛音乐服务器地址与账号，畅听 NAS 私有音乐库",
+    "loginTitleLxmusic": "连接洛雪音乐",
+    "loginNoteLxmusic": "在 Folia 里搜歌、看洛雪的我的列表，播放由洛雪完成",
     "loginTitleYtm": "登录 YouTube Music",
     "loginTitleAppleMusic": "登录 Apple Music",
     "loginNoteAppleMusic": "请在 Apple 窗口中登录，密码只会交给 Apple。",
@@ -2231,6 +2240,7 @@ export default {
     "spotify": "Spotify",
     "qishui": "汽水",
     "fnmusic": "飞牛",
+    "lxmusic": "洛雪",
   },
   "globalLyricOffset": {
     "title": "全局时间偏移",
@@ -3755,6 +3765,8 @@ export default {
     "autoSkipUnplayableDesc": "歌曲需要会员或购买、只能试听、所在地区不可播放，或原因不明无法播放时，像已下架的歌曲一样倒计时后跳到下一首。需要登录的歌曲和网络问题不会跳过。",
     "shuffleRoundNoRepeat": "一轮不重复",
     "shuffleRoundNoRepeatDesc": "打乱队列和随机播放时，这一轮已经听过的歌排到后面，先放没听过的；开着列表循环时，整轮听完会自动重新打乱。只对打乱过的队列生效，关着时和原来一样。",
+    "followExternalPlayer": "外部播放器开播时跟随",
+    "followExternalPlayerDesc": "自己管播放队列的外部播放器在它自己的窗口里开始放歌、而 Folia 没在放自己的歌时，Folia 换上那首并显示歌词。",
     "audioOutputDevice": "当前播放声卡",
     "audioOutputRefresh": "刷新",
     "audioOutputUnsupported": "当前环境不支持切换播放设备。",
@@ -5020,6 +5032,19 @@ export default {
     "errorBadResponse": "服务器返回了无法识别的响应",
     "errorBadServerUrl": "服务器地址无效，例如：http://192.168.1.10:5666"
   },
+  "lxmusic": {
+    "connect": "连接",
+    "connectNote": "请先打开洛雪音乐增强版，在「设置 → 开放 API → Folia 对接」开启对接。播放、音源、音质与输出设备都由洛雪负责，Folia 跟着显示歌词；在洛雪里切歌，Folia 也会跟着换。",
+    "errorNotRunning": "没有连上洛雪音乐。请确认洛雪已经打开，并开启了「Folia 对接」。",
+    "errorBadResponse": "洛雪音乐的回答无法识别，请把洛雪更新到支持 Folia 对接的版本。"
+  },
+  "sharedList": {
+    "inputPlaceholder": "粘贴歌单链接；只有 ID 时在前面写上平台，如「wy 123456」",
+    "opening": "正在打开…",
+    "openFailed": "打不开这个歌单：{{reason}}",
+    "needSource": "只有 ID 时请在前面写上平台，如「wy 123456」",
+    "unavailable": "没有能打开分享歌单的平台，请先连接一个"
+  },
   "hifi": {
     "settings": {
       "groupEngine": "播放引擎",
@@ -5101,7 +5126,8 @@ export default {
       "nativeProcessed": "原生处理",
       "nativeUnconfirmed": "原生 · 待确认",
       "transcoded": "转码播放",
-      "webEngine": "Web 引擎"
+      "webEngine": "Web 引擎",
+      "externalPlayer": "外部播放器"
     },
     "web": {
       "openSignalPath": "信号链路",

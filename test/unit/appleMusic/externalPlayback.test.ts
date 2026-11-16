@@ -22,6 +22,11 @@ const omniMock = vi.hoisted(() => ({
     })),
     isExternalPlaybackStatusForSong: vi.fn((_song: unknown, _status: ProviderExternalPlaybackStatus) => true),
     adoptExternalPlayback: vi.fn((_song: unknown) => {}),
+    // Apple Music's player follows the app's queue: it does not lead (leadsPlayback).
+    leadsExternalPlayback: vi.fn<(song: unknown) => boolean>(() => false),
+    skipExternalPlayback: vi.fn<(song: unknown, direction: 'next' | 'prev') => Promise<void>>(async () => {}),
+    setExternalPlaybackLoopMode: vi.fn<(song: unknown, mode: 'off' | 'all' | 'one') => Promise<void>>(async () => {}),
+    setExternalPlaybackQuality: vi.fn<(song: unknown, quality: string) => Promise<void>>(async () => {}),
 }));
 
 vi.mock('@/services/onlineMusic/omni', () => ({ omni: omniMock }));
@@ -91,7 +96,7 @@ describe('external playback route', () => {
         const playing = engine.beginExternalPlayback(song, 12);
         await flush();
         await playing;
-        expect(omniMock.playSongExternally).toHaveBeenCalledWith(song, 12);
+        expect(omniMock.playSongExternally).toHaveBeenCalledWith(song, 12, undefined);
         expect(usePlaybackStore.getState().playbackRoute).toBe('external');
         expect(usePlaybackStore.getState().playerState).toBe(PlayerState.IDLE);
         // The old song is still on screen: observers keep what they had until the app shows the new one.

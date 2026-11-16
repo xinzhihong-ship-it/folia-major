@@ -703,6 +703,9 @@ export default {
     "songUnavailableTag": "Unavailable",
     "songVideoTag": "MV",
     "queueShuffled": "Queue shuffled",
+    "leadingPlayerOwnsQueue": "This queue follows the external player that is playing: reorder or remove songs there",
+    "leadingPlayerCannotQueue": "These songs cannot go into the external player queue",
+    "leadingPlayerQueueFailed": "The songs could not be added to the external player queue",
     "loopShuffleHint": "Looking for shuffle?",
     "loopShuffleHintAction": "Learn how",
     "queueCleared": "Queue cleared",
@@ -908,6 +911,7 @@ export default {
       "settings-help": { "title": "Open Help", "description": "Open help and shortcuts" },
       "ponder-current-page": { "title": "Ponder this page", "description": "Open the interactive guide for the current page" },
       "provider-playback-setup": { "title": "Platform playback setup", "description": "Open the playback setup checklist of the current platform" },
+      "open-shared-list": { "title": "Open a shared song list", "description": "Open a song list by its share link or ID" },
       "settings-options": { "title": "Open Options", "description": "Open the options center" },
       "settings-now-playing-card-position": { "title": "Reposition song card", "description": "Drag the now playing card to a new position" },
       "settings-ai-provider": { "title": "AI provider settings", "description": "Choose an AI provider and model" },
@@ -1195,6 +1199,7 @@ export default {
       "settings-toggle-playback-fade": { "title": "Fade on pause and resume", "description": "Toggle the short fade when pausing and resuming playback" },
       "settings-toggle-auto-skip-unplayable": { "title": "Skip unplayable songs", "description": "Toggle counting down to a skip when a song is restricted or fails for an unknown reason" },
       "settings-toggle-shuffle-round-no-repeat": { "title": "Shuffle in rounds", "description": "Toggle keeping songs heard this round after the rest when shuffling, and reshuffling a finished round under list loop" },
+      "settings-toggle-follow-external-player": { "title": "Follow the external player", "description": "Toggle taking up a track an external player that leads playback starts in its own window" },
       "settings-toggle-bottom-subtitle-overlay": { "title": "Toggle bottom subtitle overlay", "description": "Show or hide the whole bottom subtitle overlay" },
       "settings-cycle-subtitle-content-mode": { "title": "Cycle subtitle content mode", "description": "Cycle subtitle content between translation, romanization, and romanization plus translation" },
       "settings-subtitles": { "title": "Subtitles", "description": "Bottom subtitle rows and what each one shows, its backdrop, and the secondary subtitle" },
@@ -1679,6 +1684,8 @@ export default {
     "placeholderPlaylist": "Search playlists...",
     "sources": "Search source",
     "kinds": "What to search",
+    "scopes": "Search scope",
+    "scopeAll": "All",
     "kindSong": "Songs",
     "kindAlbum": "Albums",
     "kindPlaylist": "Playlists",
@@ -1916,6 +1923,8 @@ export default {
     "loginNoteBodian": "Scan this code with the Bodian Music app and confirm sign-in",
     "loginTitleFnMusic": "Sign in to fnOS Music",
     "loginNoteFnMusic": "Enter your fnOS Music server address and account to play your NAS music library",
+    "loginTitleLxmusic": "Connect LX Music",
+    "loginNoteLxmusic": "Search and browse your LX Music lists here; LX Music plays the sound",
     "loginTitleYtm": "Sign in to YouTube Music",
     "loginTitleAppleMusic": "Sign in to Apple Music",
     "loginNoteAppleMusic": "Sign in using the Apple window. Your password stays with Apple.",
@@ -2231,6 +2240,7 @@ export default {
     "spotify": "Spotify",
     "qishui": "Qishui",
     "fnmusic": "fnOS",
+    "lxmusic": "LX Music",
   },
   "globalLyricOffset": {
     "title": "Global Timing Offset",
@@ -3755,6 +3765,8 @@ export default {
     "autoSkipUnplayableDesc": "When a song needs a membership or purchase, is preview-only, is blocked in your region or fails for an unknown reason, count down and skip to the next one, as with a taken-down song. Songs that need you to sign in, and network problems, are never skipped.",
     "shuffleRoundNoRepeat": "Shuffle in rounds",
     "shuffleRoundNoRepeatDesc": "When you shuffle the queue or shuffle-play, songs you've already heard this round go after the ones you haven't. With list loop on, a finished round is shuffled again on its own. Only shuffled queues are tracked; off, shuffling works as before.",
+    "followExternalPlayer": "Follow the external player",
+    "followExternalPlayerDesc": "When an external player that keeps its own queue starts a song in its own window and Folia is not playing one of its own, Folia takes that song up and shows its lyrics.",
     "audioOutputDevice": "Current Output Device",
     "audioOutputRefresh": "Refresh",
     "audioOutputUnsupported": "This environment does not support switching audio output devices.",
@@ -5020,6 +5032,19 @@ export default {
     "errorBadResponse": "The server returned an unexpected response",
     "errorBadServerUrl": "The server address is not valid, e.g. http://192.168.1.10:5666"
   },
+  "lxmusic": {
+    "connect": "Connect",
+    "connectNote": "Open LX Music (enhanced edition) and turn on \"Settings → Open API → Folia link\" first. LX Music plays the sound with its own sources, quality and output device; Folia follows it and shows the lyrics, and changing tracks in LX Music moves Folia along.",
+    "errorNotRunning": "Could not reach LX Music. Make sure it is open and its Folia link is on.",
+    "errorBadResponse": "LX Music answered in a way Folia does not understand. Update LX Music to a version with the Folia link."
+  },
+  "sharedList": {
+    "inputPlaceholder": "Paste a song list link; for a bare ID put the platform first, e.g. \"wy 123456\"",
+    "opening": "Opening…",
+    "openFailed": "This song list could not be opened: {{reason}}",
+    "needSource": "For a bare ID, put the platform first, e.g. \"wy 123456\"",
+    "unavailable": "No connected platform can open shared song lists"
+  },
   "hifi": {
     "settings": {
       "groupEngine": "Playback engine",
@@ -5101,7 +5126,8 @@ export default {
       "nativeProcessed": "Native, processed",
       "nativeUnconfirmed": "Native, checking",
       "transcoded": "Transcoded",
-      "webEngine": "Web engine"
+      "webEngine": "Web engine",
+      "externalPlayer": "External player"
     },
     "web": {
       "openSignalPath": "Signal path",

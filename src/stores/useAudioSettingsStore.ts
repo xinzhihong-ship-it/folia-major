@@ -58,6 +58,12 @@ export const AUTO_SKIP_UNPLAYABLE_KEY = 'folia_auto_skip_unplayable';
 export const SHUFFLE_ROUND_NO_REPEAT_KEY = 'folia_shuffle_round_no_repeat';
 
 /**
+ * 外部播放器自己开始放歌时跟随：自己管队列的外部播放器（externalPlayback 的 leadsPlayback）在它自己的窗口里
+ * 开始放一首、而 Folia 没在放自己的歌时，Folia 换上那首、显示歌词（useExternalPlaybackBridge）。默认开。
+ */
+export const FOLLOW_EXTERNAL_PLAYER_KEY = 'folia_follow_external_player';
+
+/**
  * Folium 1.7: the equalizer curve a mod put in place over the listener's own sound (utils/audioEqualizerModCurve.ts),
  * removed when the listener's own sound plays again. audio_equalizer_settings never holds it.
  */
@@ -218,6 +224,8 @@ export type AudioSettingsState = {
     autoSkipUnplayable: boolean;
     /** Shuffle in rounds: songs heard this round go after the rest; a finished round reshuffles under list loop. Off by default. */
     shuffleRoundNoRepeat: boolean;
+    /** Take up a track a leading external player starts in its own window. On by default. */
+    followExternalPlayer: boolean;
     audioOutputDeviceId: string;
     /** The listener's own sound, always: a mod's curve is never written into it. */
     audioEqualizerSettings: AudioEqualizerSettings;
@@ -244,6 +252,7 @@ export type AudioSettingsState = {
     handleTogglePlaybackFade: (enable: boolean) => void;
     handleToggleAutoSkipUnplayable: (enable: boolean) => void;
     handleToggleShuffleRoundNoRepeat: (enable: boolean) => void;
+    handleToggleFollowExternalPlayer: (enable: boolean) => void;
     handleSetAudioOutputDeviceId: (deviceId: string) => void;
     /*
      * The equalizer actions below return whether anything changed: the listener's settings they leave
@@ -334,6 +343,7 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
     // Off unless asked for: skipping a song the listener picked is not something to do by default.
     autoSkipUnplayable: getStoredBoolean(AUTO_SKIP_UNPLAYABLE_KEY, false),
     shuffleRoundNoRepeat: getStoredBoolean(SHUFFLE_ROUND_NO_REPEAT_KEY, false),
+    followExternalPlayer: getStoredBoolean(FOLLOW_EXTERNAL_PLAYER_KEY, true),
     audioOutputDeviceId: readStoredAudioOutputDeviceId(),
     audioEqualizerSettings: initialAudioEqualizerSettings,
     audioEqualizerModCurve: readStoredAudioEqualizerModCurve(initialAudioEqualizerSettings),
@@ -397,6 +407,10 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
     handleToggleShuffleRoundNoRepeat: (enable) => {
         setStoredBoolean(SHUFFLE_ROUND_NO_REPEAT_KEY, enable);
         set({ shuffleRoundNoRepeat: enable });
+    },
+    handleToggleFollowExternalPlayer: (enable) => {
+        setStoredBoolean(FOLLOW_EXTERNAL_PLAYER_KEY, enable);
+        set({ followExternalPlayer: enable });
     },
     handleSetAudioOutputDeviceId: (deviceId) => {
         set({ audioOutputDeviceId: deviceId });
@@ -528,6 +542,7 @@ export const selectAudioSettingsSnapshot = (state: AudioSettingsState) => ({
     playbackFadeEnabled: state.playbackFadeEnabled,
     autoSkipUnplayable: state.autoSkipUnplayable,
     shuffleRoundNoRepeat: state.shuffleRoundNoRepeat,
+    followExternalPlayer: state.followExternalPlayer,
     audioOutputDeviceId: state.audioOutputDeviceId,
     audioEqualizerSettings: state.audioEqualizerSettings,
     isAudioEqualizerOpen: state.isAudioEqualizerOpen,
@@ -544,6 +559,7 @@ export const selectAudioSettingsSnapshot = (state: AudioSettingsState) => ({
     handleTogglePlaybackFade: state.handleTogglePlaybackFade,
     handleToggleAutoSkipUnplayable: state.handleToggleAutoSkipUnplayable,
     handleToggleShuffleRoundNoRepeat: state.handleToggleShuffleRoundNoRepeat,
+    handleToggleFollowExternalPlayer: state.handleToggleFollowExternalPlayer,
     handleSetAudioOutputDeviceId: state.handleSetAudioOutputDeviceId,
     handleSetAudioEqualizerSettings: state.handleSetAudioEqualizerSettings,
     handleApplyAudioSoundPreset: state.handleApplyAudioSoundPreset,

@@ -2,6 +2,7 @@
 
 import type { ModClearCacheResult, ModExportProgress, ModFfmpegStatus, ModLogEntry, ModMainCallStats, ModRpcMessage, ModRuntimeInfo, ModRuntimeSnapshot, ModSecretChange, ModStorageUsageResult } from './mods/types';
 import type { PerfCheckProcessMemory, PerfCheckSettings } from './components/perfCheck/perfCheckTypes';
+import type { LxmusicBridgeResult, LxmusicEvent } from './services/onlineMusic/lxmusic/lxmusicTransport';
 
 declare global {
   const __COMMIT_HASH__: string;
@@ -1018,6 +1019,11 @@ declare global {
         operation: import('./services/onlineMusic/bodian/bodianTransport').BodianOperation,
         params?: import('./services/onlineMusic/bodian/bodianTransport').BodianParams,
       ) => Promise<import('./services/onlineMusic/bodian/bodianTransport').BodianBridgeResult>;
+      lxmusicRequest: (
+        operation: string,
+        params?: Record<string, unknown>,
+      ) => Promise<LxmusicBridgeResult>;
+      onLxmusicEvent: (callback: (event: LxmusicEvent) => void) => () => void;
       ytmRequest: (
         operation: import('./services/onlineMusic/ytm/ytmTransport').YtmOperation,
         params?: import('./services/onlineMusic/ytm/ytmTransport').YtmParams,

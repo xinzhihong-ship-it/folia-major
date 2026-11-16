@@ -1,4 +1,4 @@
-import type { ProviderExternalPlaybackStatus } from '../../types/onlineMusic';
+import type { ProviderExternalPlayContext, ProviderExternalPlaybackStatus } from '../../types/onlineMusic';
 import type { SongResult } from '../../types';
 import { PlayerState } from '../../types';
 import { usePlaybackStore, setAudioSrc, setDuration, setPlaybackRoute, setPlayerState } from '../../stores/usePlaybackStore';
@@ -20,6 +20,12 @@ import { useAudioSettingsStore } from '../../stores/useAudioSettingsStore';
 //
 // This file knows no platform: what to ask is Omni's `externalPlayback` capability, and the
 // player's own answers come back as `ProviderExternalPlaybackStatus`.
+//
+// A leading player (`leadsPlayback`) keeps its own queue, play mode and volume and moves on by
+// itself: a track it moves to is announced as `player-moved` for the app to follow instead of being
+// paused, its end does not move the app's queue, a new queue revision is announced as
+// `player-queue`, and its volume, mute and play mode are taken into the app's settings (and the
+// app's changes sent to it). Nothing of the app's queue is prepared in it.
 
 /** How often the player is asked for its state while a track is loaded. */
 const STATUS_INTERVAL_MS = 500;
@@ -41,12 +47,21 @@ const REPEAT_WRAP_SLACK_SEC = 3;
  * rebuild): it follows the player again.
  */
 const HANDOVER_RECLAIM_MS = 10_000;
+/**
+ * After the listener moves the volume or the loop mode here, a leading player's answers keep its
+ * older value for a moment: they are not taken over the listener's change for this long.
+ */
+const LOCAL_CHANGE_HOLD_MS = 2000;
 
 export type ExternalPlaybackEvent =
     | { type: 'status' }
     | { type: 'ended' }
     | { type: 'failure'; error: unknown }
-    | { type: 'foreign-track' };
+    | { type: 'foreign-track' }
+    /** A leading player moved to another track by itself: the app follows it. */
+    | { type: 'player-moved'; song: SongResult; status: ProviderExternalPlaybackStatus }
+    /** A leading player's queue changed: the app reads it again. */
+    | { type: 'player-queue'; song: SongResult };
 
 type ExternalSession = {
     song: SongResult;
@@ -73,6 +88,14 @@ type ExternalSession = {
     positionRevision: number;
     seekPending: boolean;
     seeking: boolean;
+    /** The player keeps its own queue and play mode and moves on by itself (`leadsPlayback`). */
+    leads: boolean;
+    /** The speed the player last said it plays at. */
+    rate: number;
+    /** The other track a leading player moved to that the app was told to follow. */
+    followingMediaId: string | null;
+    /** The quality the player last said it sounds the track at, in its own words ("FLAC"). */
+    qualityLabel: string | null;
 };
 
 export const externalMediaShim = new MediaShim('external:');
@@ -96,7 +119,7 @@ let appliedVolume: number | null = null;
 /** The level of the write in flight, or null when none is: at most one is sent at a time. */
 let sendingVolume: number | null = null;
 /** A level asked for while a write was in flight (a slider drag); sent when that write returns. */
-let wantedVolume: number | null = null;
+let wantedVolume: VolumeWrite | null = null;
 let volumeFailureNoted = false;
 /** Bumped by every start: a write sent before it cannot vouch for the level after it. */
 let volumeEpoch = 0;
@@ -104,6 +127,15 @@ let volumeEpoch = 0;
 let appliedRepeatOne: boolean | null = null;
 /** A failed repeat write is tried again on each answer; it is said once until one succeeds. */
 let repeatFailureNoted = false;
+/** The play mode a leading player last confirmed or said, or null when unknown. */
+let appliedLoopMode: 'off' | 'all' | 'one' | null = null;
+/** The queue revision of a leading player the app last read its queue at. */
+let seenQueueRevision: string | null = null;
+/** When the listener last changed the volume / the loop mode here (performance.now). */
+let localVolumeChangeAt = 0;
+let localLoopChangeAt = 0;
+/** Set while a leading player's own state is written into the app's settings: no echo back. */
+let adoptingPlayerState = false;
 const listeners = new Set<(event: ExternalPlaybackEvent) => void>();
 
 const emit = (event: ExternalPlaybackEvent) => {
@@ -139,6 +171,8 @@ export const isExternalPaused = () => session ? !session.playing : false;
 
 /** The song the external player was told to play, or null. */
 export const getExternalSong = () => session?.song ?? null;
+/** The quality the external player says it sounds the track at ("FLAC"), while the route is on it. */
+export const getExternalQualityLabel = () => (isExternalRoute() ? session?.qualityLabel ?? null : null);
 
 /** Notified on every change the UI has to react to (state, end of track, a failed answer). */
 export const subscribeExternalPlayback = (listener: (event: ExternalPlaybackEvent) => void): (() => void) => {
@@ -178,7 +212,8 @@ const validDurationSec = (ms: number): number | null => (
 // Queue edits and repeat-mode changes invalidate the prepared tail before the next transition.
 const refreshPreparedQueue = () => {
     const current = session;
-    if (!current || !isExternalPlaybackReadyForPrefetch(current.song)) return;
+    // A leading player plays its own queue: nothing of the app's is prepared in it.
+    if (!current || current.leads || !isExternalPlaybackReadyForPrefetch(current.song)) return;
     const state = usePlaybackStore.getState();
     const next = externalQueueSuccessors(current.song, state.playQueue, useAudioSettingsStore.getState().loopMode, state.isFmMode, omni.canPlaySong);
     const key = JSON.stringify(next.map(getPlaybackSongKey));
@@ -195,8 +230,8 @@ const refreshPreparedQueue = () => {
 const syncClock = (positionSec: number, paused: boolean, sampledAtMs: number, holdBackward: boolean) => {
     if (!session) return;
     paused ||= session.live;
-    const ageSec = paused ? 0 : Math.min(Math.max(0, (performance.now() - sampledAtMs) / 1000), MAX_SAMPLE_AGE_SEC);
-    session.clock.sync({ positionSec: positionSec + ageSec, samplePositionSec: positionSec, paused, nowMs: performance.now(), holdBackward });
+    const ageSec = (paused ? 0 : Math.min(Math.max(0, (performance.now() - sampledAtMs) / 1000), MAX_SAMPLE_AGE_SEC)) * session.rate;
+    session.clock.sync({ positionSec: positionSec + ageSec, samplePositionSec: positionSec, paused, nowMs: performance.now(), holdBackward, rate: session.rate });
 };
 
 const markPlaying = (positionSec: number, preserveClock = false) => {
@@ -268,7 +303,8 @@ const replayEndedTrack = (current: ExternalSession) => {
  */
 function syncExternalRepeatOne(): void {
     const current = session;
-    if (!current || current.handedOver || !isExternalRoute()) return;
+    // A leading player's single repeat is its play mode (syncLeadingLoopMode).
+    if (!current || current.leads || current.handedOver || !isExternalRoute()) return;
     const wanted = loopsCurrentTrack();
     if (appliedRepeatOne === wanted) return;
     appliedRepeatOne = wanted;
@@ -284,8 +320,76 @@ function syncExternalRepeatOne(): void {
     });
 }
 
+/** Sends a leading player the app's loop mode, once it differs from what the player has. */
+function syncLeadingLoopMode(): void {
+    const current = session;
+    if (!current?.leads || current.handedOver || !isExternalRoute()) return;
+    const wanted = useAudioSettingsStore.getState().loopMode;
+    if (appliedLoopMode === wanted) return;
+    appliedLoopMode = wanted;
+    void omni.setExternalPlaybackLoopMode(current.song, wanted).catch((error: unknown) => {
+        if (appliedLoopMode === wanted) appliedLoopMode = null;
+        console.warn('[ExternalPlayback] the leading player play mode could not be set', error);
+    });
+}
+
+/** Sends a leading player the quality the listener picked here. */
+function syncLeadingQuality(): void {
+    const current = session;
+    if (!current?.leads || current.handedOver || !isExternalRoute()) return;
+    const quality = useAudioSettingsStore.getState().audioQuality;
+    void omni.setExternalPlaybackQuality(current.song, quality).then(() => {
+        console.info('[ExternalPlayback] the leading player quality was set', { quality });
+    }, (error: unknown) => {
+        console.warn('[ExternalPlayback] the leading player quality could not be set', error);
+        emit({ type: 'failure', error });
+    });
+}
+
+/**
+ * A leading player's own volume, mute and play mode become the app's, and a new revision of its
+ * queue is announced. What the listener changed here a moment ago stands over an answer that may
+ * not have heard of it yet.
+ */
+const adoptLeadingPlayerState = (current: ExternalSession, status: ProviderExternalPlaybackStatus) => {
+    const now = performance.now();
+    const settings = useAudioSettingsStore.getState();
+    adoptingPlayerState = true;
+    try {
+        if (typeof status.volume === 'number' && Number.isFinite(status.volume) && sendingVolume === null && now - localVolumeChangeAt > LOCAL_CHANGE_HOLD_MS) {
+            const volume = Math.min(1, Math.max(0, status.volume));
+            const muted = status.muted === true;
+            appliedVolume = muted ? 0 : volume;
+            if (Math.abs(settings.volume - volume) > 0.001) settings.handleSetVolume(volume);
+            if (settings.isMuted !== muted) settings.handleSetMuted(muted);
+        }
+        if (status.loopMode && now - localLoopChangeAt > LOCAL_CHANGE_HOLD_MS) {
+            appliedLoopMode = status.loopMode;
+            if (settings.loopMode !== status.loopMode) settings.handleSetLoopMode(status.loopMode);
+        }
+    } finally {
+        adoptingPlayerState = false;
+    }
+    if (status.queueRevision !== undefined && status.queueRevision !== seenQueueRevision) {
+        seenQueueRevision = status.queueRevision;
+        emit({ type: 'player-queue', song: current.song });
+    }
+};
+
 const markEnded = (positionSec: number) => {
     if (!session || session.ended) return;
+    if (session.leads) {
+        // A leading player goes on by itself (or stops at the end of its queue): the app does not move
+        // its queue, it waits for the next track the player names (`player-moved`), and shows this one
+        // paused at its end meanwhile.
+        session.ended = true;
+        session.playing = false;
+        syncClock(positionSec, true, performance.now(), false);
+        externalMediaShim.markEnded();
+        setPlayerState(PlayerState.PAUSED);
+        emit({ type: 'status' });
+        return;
+    }
     if (loopsCurrentTrack()) {
         replayEndedTrack(session);
         return;
@@ -308,6 +412,16 @@ const applyStatus = (status: ProviderExternalPlaybackStatus, sampledAtMs: number
     if (!current.announced && !status.mediaId) return;
     if (status.mediaId && !omni.isExternalPlaybackStatusForSong(current.song, status)) {
         if (!current.announced) return;
+        // A leading player moved on by itself (its end, or a step in its own window): the app follows
+        // it, once for each track it moves to, and leaves it sounding.
+        if (current.leads) {
+            if (current.followingMediaId !== status.mediaId) {
+                current.followingMediaId = status.mediaId;
+                console.info('[ExternalPlayback] the leading player moved to another track: following it');
+                emit({ type: 'player-moved', song: current.song, status });
+            }
+            return;
+        }
         // The player is on a track this app did not ask for (someone used its own window). Stop it
         // rather than let a song Folia knows nothing about keep sounding under Folia's controls.
         if (!current.foreign) {
@@ -320,6 +434,12 @@ const applyStatus = (status: ProviderExternalPlaybackStatus, sampledAtMs: number
         return;
     }
     current.live = status.live === true;
+    current.qualityLabel = typeof status.qualityLabel === 'string' && status.qualityLabel ? status.qualityLabel : null;
+    if (current.leads) {
+        current.followingMediaId = null;
+        current.rate = typeof status.rate === 'number' && Number.isFinite(status.rate) && status.rate > 0 ? status.rate : 1;
+        if (current.announced) adoptLeadingPlayerState(current, status);
+    }
     if (status.isPlaying && status.mediaId && !status.seeking) {
         if (current.live || (current.sampledPosition !== null && positionSec > current.sampledPosition + 0.05)) current.prefetchReady = true;
         current.sampledPosition = positionSec;
@@ -340,7 +460,7 @@ const applyStatus = (status: ProviderExternalPlaybackStatus, sampledAtMs: number
     // Before the app has shown the song, the player's answers only fill in the session: the
     // transport, the shim and the media observers belong to the song on screen until then.
     if (!current.announced) {
-        current.clock.sync({ positionSec, paused: current.live || !status.isPlaying, holdBackward: false });
+        current.clock.sync({ positionSec, paused: current.live || !status.isPlaying, holdBackward: false, rate: current.rate });
         current.playing = status.isPlaying;
         current.seeking = status.seeking === true;
         if (status.ended || (status.isPlaying === false && atEnd)) current.ended = true;
@@ -382,7 +502,7 @@ const applyStatus = (status: ProviderExternalPlaybackStatus, sampledAtMs: number
     }
     current.foreign = false;
     if (status.seeking || current.seeking) {
-        current.clock.sync({ positionSec, paused: current.live || !status.isPlaying, holdBackward: false });
+        current.clock.sync({ positionSec, paused: current.live || !status.isPlaying, holdBackward: false, rate: current.rate });
         if ((status.seeking === true) !== current.seeking) externalMediaShim.markSeeked();
     }
     current.seeking = status.seeking === true;
@@ -453,10 +573,21 @@ async function poll(): Promise<void> {
     }
 }
 
+/**
+ * A volume write: `level` is what an ordinary player is given (the volume, 0 when muted); a leading
+ * player, which keeps a mute of its own, is given `volume` and `muted` apart.
+ */
+type VolumeWrite = { level: number; volume: number; muted: boolean };
+
+const volumeWrite = (rawVolume: number, muted: boolean): VolumeWrite => {
+    const volume = Math.min(1, Math.max(0, Number.isFinite(rawVolume) ? rawVolume : 1));
+    return { level: muted ? 0 : volume, volume, muted };
+};
+
 /** The app's own volume as a linear level for the external player: muted is 0. */
-const settingsVolume = () => {
+const settingsVolume = (): VolumeWrite => {
     const { volume, isMuted } = useAudioSettingsStore.getState();
-    return isMuted ? 0 : Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1));
+    return volumeWrite(volume, isMuted);
 };
 
 /**
@@ -464,18 +595,24 @@ const settingsVolume = () => {
  * volume slider and mute reach it only this way. Writes are coalesced: a drag sends one at a time
  * and the newest level when the last one returns. `level` defaults to the stored volume.
  */
-export function setExternalPlaybackVolume(level = settingsVolume()): void {
+export function setExternalPlaybackVolume(requested: number | VolumeWrite = settingsVolume()): void {
     const current = session;
     if (!current || !isExternalRoute()) return;
+    // A bare level (Folium, tests) is that level, unmuted.
+    const write = typeof requested === 'number' ? volumeWrite(requested, false) : requested;
     if (sendingVolume !== null) {
-        wantedVolume = level;
+        wantedVolume = write;
         return;
     }
     wantedVolume = null;
+    const { level } = write;
     if (appliedVolume === level) return;
     sendingVolume = level;
     const epoch = volumeEpoch;
-    void omni.setExternalPlaybackVolume(current.song, level).then(() => {
+    const sent = current.leads
+        ? omni.setExternalPlaybackVolume(current.song, write.volume, write.muted)
+        : omni.setExternalPlaybackVolume(current.song, level);
+    void sent.then(() => {
         if (epoch !== volumeEpoch) return;
         appliedVolume = level;
         volumeFailureNoted = false;
@@ -497,7 +634,8 @@ export function setExternalPlaybackVolume(level = settingsVolume()): void {
 /** A slider drag: the level being dragged to, heard from the external player when it is the route. */
 export function previewExternalPlaybackVolume(volume: number): void {
     if (!isExternalRoute()) return;
-    setExternalPlaybackVolume(useAudioSettingsStore.getState().isMuted ? 0 : Math.min(1, Math.max(0, volume)));
+    localVolumeChangeAt = performance.now();
+    setExternalPlaybackVolume(volumeWrite(volume, useAudioSettingsStore.getState().isMuted));
 }
 
 /**
@@ -506,8 +644,11 @@ export function previewExternalPlaybackVolume(volume: number): void {
  */
 const playsInSamePlayer = (a: SongResult, b: SongResult) => getOnlineProviderIdForSong(a) === getOnlineProviderIdForSong(b);
 
-/** Starts a track in the external player and puts the app on that route. */
-export async function beginExternalPlayback(song: SongResult, startSec = 0): Promise<void> {
+/**
+ * Starts a track in the external player and puts the app on that route. `context.queue` is the queue
+ * the song is played from, for a player that keeps a queue of its own.
+ */
+export async function beginExternalPlayback(song: SongResult, startSec = 0, context?: ProviderExternalPlayContext): Promise<void> {
     if (isExternalRoute()) {
         // Already on the route: within the same player replacing the track is one call, and the old
         // clock must not speak for the new song while it does. A song of another provider starts in
@@ -523,9 +664,11 @@ export async function beginExternalPlayback(song: SongResult, startSec = 0): Pro
     const clock = createExternalClock();
     clock.setDuration(durationSec);
     clock.sync({ positionSec: Math.max(0, startSec), paused: true });
+    const leads = omni.leadsExternalPlayback(song);
     session = {
         song, songKey, attempt, clock, durationSec,
         announced: false, playing: false, starting: false, sampledPosition: Math.max(0, startSec), prefetchReady: false, live: false, ended: false, foreign: false, handedOver: false, preparedQueueKey: '', positionRevision: 0, seekPending: false, seeking: false,
+        leads, rate: 1, followingMediaId: null, qualityLabel: null,
     };
     failureNoted = false;
     externalMediaShim.beginTrack(songKey);
@@ -534,17 +677,23 @@ export async function beginExternalPlayback(song: SongResult, startSec = 0): Pro
         setPlaybackRoute('external');
     });
     emit({ type: 'status' });
-    // The player's page may have been replaced since the last song: set its level again before it
-    // sounds. Playback commands reach the page in order, so this lands before the start.
     volumeEpoch += 1;
     appliedVolume = null;
     volumeFailureNoted = false;
-    setExternalPlaybackVolume();
-    // Its single repeat too, for the same reasons; sent again below once it has the song.
     appliedRepeatOne = null;
-    syncExternalRepeatOne();
+    if (leads) {
+        // A leading player's level, mode and queue are its own: they are read from its answers,
+        // not set from here; the queue it plays this song from is read once more after the start.
+        seenQueueRevision = null;
+    } else {
+        // The player's page may have been replaced since the last song: set its level again before it
+        // sounds. Playback commands reach the page in order, so this lands before the start.
+        setExternalPlaybackVolume();
+        // Its single repeat too, for the same reasons; sent again below once it has the song.
+        syncExternalRepeatOne();
+    }
     try {
-        await omni.playSongExternally(song, Math.max(0, startSec));
+        await omni.playSongExternally(song, Math.max(0, startSec), context);
     } catch (error) {
         if (session?.attempt === attempt) {
             stopExternalPlayback('the player refused the song');
@@ -566,11 +715,13 @@ export async function beginExternalPlayback(song: SongResult, startSec = 0): Pro
     }
     // The level sent ahead may have landed on a page the companion then replaced (it moves to the
     // account's storefront between requests): once the player has the song, send the level again.
-    volumeEpoch += 1;
-    appliedVolume = null;
-    setExternalPlaybackVolume();
-    appliedRepeatOne = null;
-    syncExternalRepeatOne();
+    if (!leads) {
+        volumeEpoch += 1;
+        appliedVolume = null;
+        setExternalPlaybackVolume();
+        appliedRepeatOne = null;
+        syncExternalRepeatOne();
+    }
     // Seed the incoming clock before announcement instead of showing a paused/loading frame for 500 ms.
     const sampledAt = performance.now();
     const positionRevision = session.positionRevision;
@@ -600,9 +751,11 @@ export async function adoptExternalPlayback(song: SongResult): Promise<boolean> 
     const clock = createExternalClock();
     clock.setDuration(durationSec);
     clock.sync({ positionSec: 0, paused: true });
+    const leads = omni.leadsExternalPlayback(song);
     session = {
         song, songKey, attempt, clock, durationSec,
         announced: false, playing: false, starting: false, sampledPosition: null, prefetchReady: false, live: false, ended: false, foreign: false, handedOver: false, preparedQueueKey: '', positionRevision: 0, seekPending: false, seeking: false,
+        leads, rate: 1, followingMediaId: null, qualityLabel: null,
     };
     failureNoted = false;
     externalMediaShim.beginTrack(songKey);
@@ -629,13 +782,17 @@ export async function adoptExternalPlayback(song: SongResult): Promise<boolean> 
         return false;
     }
     omni.adoptExternalPlayback(song);
-    // The level it sounds at was set by the window that is gone; said again so it is known here.
     volumeEpoch += 1;
     appliedVolume = null;
     volumeFailureNoted = false;
-    setExternalPlaybackVolume();
     appliedRepeatOne = null;
-    syncExternalRepeatOne();
+    if (leads) {
+        seenQueueRevision = null;
+    } else {
+        // The level it sounds at was set by the window that is gone; said again so it is known here.
+        setExternalPlaybackVolume();
+        syncExternalRepeatOne();
+    }
     applyStatus(status, sampledAt);
     announceExternalPlayback();
     if (session?.attempt !== attempt || !isExternalRoute()) return true;
@@ -712,6 +869,7 @@ export function reclaimExternalPlayback(reason: string): void {
     // The loop mode may have changed while it was handed over: its repeat is said again.
     appliedRepeatOne = null;
     syncExternalRepeatOne();
+    syncLeadingLoopMode();
     if (isExternalRoute()) schedulePoll(0);
 }
 
@@ -780,6 +938,8 @@ export function stopExternalPlayback(reason: string): void {
         });
     }
     appliedRepeatOne = null;
+    appliedLoopMode = null;
+    seenQueueRevision = null;
 }
 
 /**
@@ -841,17 +1001,44 @@ export const seekExternalPlayback = (timeSec: number, { resume = false }: { resu
     return true;
 };
 
+/** Whether the route is on a leading player's track: its queue and play mode are the player's. */
+export const isLeadingExternalRoute = () => isExternalRoute() && session?.leads === true && !session.handedOver;
+
+/**
+ * The listener's next or previous where a leading player plays: asked of the player, which moves by
+ * its own queue and play mode; the app follows the track it moves to. False when the route is not on
+ * such a player.
+ */
+export function stepLeadingExternalPlayer(direction: 'next' | 'prev'): boolean {
+    const current = session;
+    if (!current?.leads || current.handedOver || !isExternalRoute()) return false;
+    void omni.skipExternalPlayback(current.song, direction).catch((error: unknown) => {
+        if (session !== current) return;
+        console.warn('[ExternalPlayback] the leading player could not move on', error);
+        emit({ type: 'failure', error });
+    });
+    return true;
+}
+
 /** Mounts the clock, the shim and the route guard once; repeated calls do nothing. */
 export const installExternalPlayback = (): void => {
     if (installed) return;
     installed = true;
     externalMediaShim.setClockReader(() => getExternalPosition());
     useAudioSettingsStore.subscribe((state, previous) => {
+        // A leading player's own state being taken into the settings is not sent back to it.
+        if (adoptingPlayerState) return;
         if (state.loopMode !== previous.loopMode) {
             refreshPreparedQueue();
             syncExternalRepeatOne();
+            localLoopChangeAt = performance.now();
+            syncLeadingLoopMode();
         }
-        if (state.volume !== previous.volume || state.isMuted !== previous.isMuted) setExternalPlaybackVolume();
+        if (state.volume !== previous.volume || state.isMuted !== previous.isMuted) {
+            localVolumeChangeAt = performance.now();
+            setExternalPlaybackVolume();
+        }
+        if (state.audioQuality !== previous.audioQuality) syncLeadingQuality();
     });
     usePlaybackStore.subscribe((state, previous) => {
         if (ownWriteDepth > 0) return;

@@ -9,8 +9,9 @@ import { askPlayedSong, isSongUnavailable } from '../../../../services/onlineMus
 import { getSongResourceCacheKey } from '../../../../services/onlineMusic/resourceKeys';
 import { getPersonalFmSelection, getStationRequestOptions } from '../../../../stores/usePersonalFmModeStore';
 import { omni } from '../../../../services/onlineMusic/omni';
-import { announceExternalPlayback, beginExternalPlayback, isExternalRoute, yieldExternalPlayback } from '../../../../services/onlineMusic/externalPlayback';
+import { announceExternalPlayback, beginExternalPlayback, isExternalRoute, stepLeadingExternalPlayer, yieldExternalPlayback } from '../../../../services/onlineMusic/externalPlayback';
 import { getCachedSongCoverUrl, hasCachedSongAudio } from '../../../../services/onlineMusic/resourceCache';
+import { queueInLeadingPlayer, refuseLeadingQueueEdit, songsForLeadingPlayer } from '../leadingPlayerQueue';
 import { getPrefetchedData, invalidateAndRefetch, prefetchNearbySongs, refreshPrefetchAfterQueueEdit } from '../../../../services/prefetchService';
 import { getLocalSong } from '../../../../services/db';
 import { retireBlobUrl } from '../../../../services/playbackBlobUrls';
@@ -333,6 +334,13 @@ export function usePlaybackQueueController({
         const context = live.activePlaybackContext;
         if (songs.length === 0) {
             return { changed: false, deduplicated: false, affectedCount: 0, baseQueue: [], affectedSongs: [], addBehavior };
+        }
+
+        // 外部播放器主导：加进它自己的队列（「稍后播放」），应用的队列等它照回来
+        const forPlayer = context === 'main' ? songsForLeadingPlayer(songs.filter(song => !isSongUnavailable(song))) : null;
+        if (forPlayer) {
+            queueInLeadingPlayer(forPlayer, addBehavior === 'next' ? 'next' : 'end', t);
+            return { changed: false, deduplicated: false, affectedCount: forPlayer.length, currentSong: live.currentSong, baseQueue: live.playQueue, queue: live.playQueue, affectedSongs: forPlayer, addBehavior };
         }
 
         const mainSnapshot = context === 'stage' ? mainPlaybackSnapshotRef.current : null;
@@ -942,7 +950,8 @@ export function usePlaybackQueueController({
                 // call, and pausing it here would race that play in the companion's queue. A song of
                 // another provider plays in another player: `beginExternalPlayback` stops the old one.
                 if (!isExternalRoute()) pauseWhatIsSounding(audioRef.current);
-                await beginExternalPlayback(song, options.startAtSec ?? 0);
+                // The queue goes along for a player that keeps a queue of its own (`leadsPlayback`).
+                await beginExternalPlayback(song, options.startAtSec ?? 0, { queue: newQueue });
             } else {
                 // Where the platform could not be reached the load asks again by itself while this play is
                 // wanted, and says so.
@@ -1337,6 +1346,12 @@ export function usePlaybackQueueController({
 
     const handleNextTrack = useCallback(async (options?: NextTrackOptions) => {
         if (isNowPlayingStageActive) return;
+        // A player that keeps its own queue and play mode moves on by itself: the listener's step is
+        // asked of it, and the app follows the track it moves to. Automatic steps (a failure's skip)
+        // still pick from the queue here, which mirrors the player's.
+        const automaticStep = options?.allowStopOnMissing || options?.playedToEnd || options?.fromSong
+            || options?.isAutomixAdvance || options?.unavailableSkipCount !== undefined;
+        if (!automaticStep && stepLeadingExternalPlayer('next')) return;
         // The FM top-up below waits for the radio: a whole-queue write during that wait has ended FM.
         const queueWritesAtStart = wholeQueueWritesSoFar();
 
@@ -1473,6 +1488,8 @@ export function usePlaybackQueueController({
 
     const handlePrevTrack = useCallback(() => {
         if (isNowPlayingStageActive) return;
+        // As in handleNextTrack: a player that keeps its own queue steps back by itself.
+        if (stepLeadingExternalPlayer('prev')) return;
         if (!currentSong || playQueue.length === 0) return;
 
         // Same as handleNextTrack, and more visibly wrong without it: stepping back from the track
@@ -1857,6 +1874,7 @@ export function usePlaybackQueueController({
     }, [handleStagePlayerQueueRequest]);
 
     const shuffleQueue = useCallback(() => {
+        if (refuseLeadingQueueEdit(t)) return;
         if (!playQueue || !canShuffleQueue(playQueue.length, isFmMode, isNowPlayingStageActive)) return;
 
         // 「一轮不重复」：这一轮听过的排到后面（shuffle/useShuffleRoundTracking）。关着时走下面原来的洗法。
@@ -1915,6 +1933,7 @@ export function usePlaybackQueueController({
 
     const clearQueue = useCallback(() => {
         if (isNowPlayingStageActive) return;
+        if (refuseLeadingQueueEdit(t)) return;
         if (!playQueue || playQueue.length === 0) return;
 
         setPlayQueue([]);

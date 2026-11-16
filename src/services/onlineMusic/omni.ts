@@ -32,9 +32,12 @@ import type {
     OnlineSearchProvider,
     PersonalFmRequestOptions,
     ProviderCatalogEntityKind,
+    ProviderExternalFollow,
+    ProviderExternalPlayContext,
     ProviderExternalPlaybackStatus,
     ProviderLoginForm,
     ProviderSearchContext,
+    ProviderSearchScope,
     ProviderSongCatalogRefs,
     ProviderLikedSongIds,
     LoginDiagnosticLine,
@@ -617,6 +620,15 @@ export const omni = {
         return searchWith(provider.search, query, page, context);
     },
 
+    // The parts of a provider a song search can be narrowed to (`ProviderSearchContext.scope`); empty
+    // where it has none, or is not there.
+    async getProviderSearchScopes(providerId: OmniProviderId): Promise<ProviderSearchScope[]> {
+        const provider = getOnlineMusicProvider(providerId);
+        const read = provider?.search?.getScopes?.bind(provider.search);
+        if (!provider || !providerSupports(provider, 'search') || !read) return [];
+        return await runRequest(provider, 'collection', () => read());
+    },
+
     // What the provider's search finds: songs wherever it searches, albums and playlists where it has
     // a search for them and also opens them. Empty for a provider that is not there or has no search.
     getProviderSearchKinds(providerId: OmniProviderId): OmniSearchKind[] {
@@ -1122,12 +1134,107 @@ export const omni = {
         return canPlaySongExternally(song);
     },
 
-    async playSongExternally(song: SongResult, startSec = 0): Promise<void> {
+    async playSongExternally(song: SongResult, startSec = 0, context?: ProviderExternalPlayContext): Promise<void> {
         const provider = providerForSong(song);
         if (!providerSupports(provider, 'externalPlayback') || !provider.externalPlayback) {
             return unsupported(provider.id, 'externalPlayback');
         }
-        await runRequest(provider, 'audio', () => provider.externalPlayback!.play(song, startSec));
+        await runRequest(provider, 'audio', () => provider.externalPlayback!.play(song, startSec, context));
+    },
+
+    // A player that keeps its own queue and play mode and moves through them by itself; the app
+    // follows it (`OnlineExternalPlaybackProvider.leadsPlayback`).
+    leadsExternalPlayback(song: SongResult): boolean {
+        return canPlaySongExternally(song) && getOnlineMusicProviderForSong(song)?.externalPlayback?.leadsPlayback === true;
+    },
+
+    async skipExternalPlayback(song: SongResult, direction: 'next' | 'prev'): Promise<void> {
+        const provider = providerForSong(song);
+        const skip = provider.externalPlayback?.skip?.bind(provider.externalPlayback);
+        if (!skip) return unsupported(provider.id, 'externalPlayback.skip');
+        await runRequest(provider, 'audio', () => skip(direction));
+    },
+
+    // A provider that opens a collection shared from elsewhere by its link or id (a pasted share link).
+    canOpenSharedCollections(providerId: OmniProviderId): boolean {
+        return typeof getOnlineMusicProvider(providerId)?.catalog?.openSharedCollection === 'function';
+    },
+
+    async openSharedCollection(providerId: OmniProviderId, text: string, source?: string): Promise<OmniCollection> {
+        const provider = requireOnlineMusicProvider(providerId);
+        const open = provider.catalog?.openSharedCollection?.bind(provider.catalog);
+        if (!open) return unsupported(providerId, 'catalog.openSharedCollection');
+        return await runRequest(provider, 'collection', () => open(text, source));
+    },
+
+    async getSharedCollectionSources(providerId: OmniProviderId): Promise<Array<{ id: string; name: string }>> {
+        const provider = requireOnlineMusicProvider(providerId);
+        const read = provider.catalog?.getSharedCollectionSources?.bind(provider.catalog);
+        if (!read) return [];
+        return await runRequest(provider, 'collection', () => read());
+    },
+
+    // The track a leading player of `providerId` moved to by itself, with the queue it plays it from;
+    // null where the provider cannot tell it.
+    async followExternalPlayer(providerId: OmniProviderId, status: ProviderExternalPlaybackStatus): Promise<ProviderExternalFollow | null> {
+        const provider = getOnlineMusicProvider(providerId);
+        const player = provider?.externalPlayback;
+        const follow = player?.leadsPlayback ? player.follow?.bind(player) : undefined;
+        if (!provider || !follow) return null;
+        return await runRequest(provider, 'audio', () => follow(status));
+    },
+
+    async getExternalPlayerQueue(song: SongResult): Promise<SongResult[] | null> {
+        const provider = providerForSong(song);
+        const getQueue = provider.externalPlayback?.getQueue?.bind(provider.externalPlayback);
+        if (!getQueue) return null;
+        return await runRequest(provider, 'audio', () => getQueue());
+    },
+
+    // A player without a play mode of its own is left alone.
+    async setExternalPlaybackLoopMode(song: SongResult, mode: 'off' | 'all' | 'one'): Promise<void> {
+        const provider = providerForSong(song);
+        const setLoopMode = provider.externalPlayback?.setLoopMode?.bind(provider.externalPlayback);
+        if (!setLoopMode) return;
+        await runRequest(provider, 'audio', () => setLoopMode(mode));
+    },
+
+    // A player without a quality setting of its own is left alone.
+    async setExternalPlaybackQuality(song: SongResult, quality: AudioQualityPreference): Promise<void> {
+        const provider = providerForSong(song);
+        const setQuality = provider.externalPlayback?.setQuality?.bind(provider.externalPlayback);
+        if (!setQuality) return;
+        await runRequest(provider, 'audio', () => setQuality(audioQualityFor(provider.id, quality)));
+    },
+
+    canQueueInExternalPlayer(song: SongResult): boolean {
+        return canPlaySongExternally(song) && typeof getOnlineMusicProviderForSong(song)?.externalPlayback?.queueInPlayer === 'function';
+    },
+
+    // Songs queued in a leading player (all of the provider of the first): after the track it plays
+    // now, or after the songs already waiting there.
+    async queueInExternalPlayer(songs: SongResult[], position: 'next' | 'end'): Promise<void> {
+        if (songs.length === 0) return;
+        const provider = providerForSong(songs[0]);
+        const queueInPlayer = provider.externalPlayback?.queueInPlayer?.bind(provider.externalPlayback);
+        if (!queueInPlayer) return unsupported(provider.id, 'externalPlayback.queueInPlayer');
+        await runRequest(provider, 'audio', () => queueInPlayer(songs, position));
+    },
+
+    // Every leading player that can say when it starts a track by itself: `tell` hears which
+    // provider's player it is. Answers with the way to stop listening to all of them.
+    watchExternalPlayers(tell: (providerId: OmniProviderId, status: ProviderExternalPlaybackStatus) => void): () => void {
+        const stops = listOnlineMusicProviders().flatMap(provider => {
+            const watch = provider.externalPlayback?.leadsPlayback ? provider.externalPlayback.watchPlayer?.bind(provider.externalPlayback) : undefined;
+            if (!watch) return [];
+            try {
+                return [watch(status => tell(provider.id, status))];
+            } catch (error) {
+                console.warn('[Omni] an external player could not be watched', error);
+                return [];
+            }
+        });
+        return () => stops.forEach(stop => stop());
     },
 
     // A window rebuild keeps the player sounding: the new window takes the running song over
@@ -1165,10 +1272,10 @@ export const omni = {
     },
 
     // A player without its own level control is left alone: the call is a no-op, not an error.
-    async setExternalPlaybackVolume(song: SongResult, volume: number): Promise<void> {
+    async setExternalPlaybackVolume(song: SongResult, volume: number, muted?: boolean): Promise<void> {
         const provider = providerForSong(song);
         if (!provider.externalPlayback?.setVolume) return;
-        await runRequest(provider, 'audio', () => provider.externalPlayback!.setVolume!(volume));
+        await runRequest(provider, 'audio', () => provider.externalPlayback!.setVolume!(volume, muted));
     },
 
     // A player without its own single-track repeat is left alone: the route starts the track again itself.

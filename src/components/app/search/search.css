@@ -387,6 +387,32 @@
     .search-kind-label { font-size: 18px; }
 }
 
+/* 范围小标签（来源能把单曲搜索收窄到其中一家时）：一排描边小胶囊，选着的那个填上墨色。 */
+.search-scopes {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.search-scope {
+    flex: none;
+    padding: 3px 11px;
+    border: 1px solid var(--search-ink-soft);
+    border-radius: 999px;
+    color: var(--search-ink-soft);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    background: none;
+    transition: color 200ms ease, background-color 200ms ease, border-color 200ms ease;
+}
+
+.search-scope:hover { color: var(--search-ink); border-color: var(--search-ink); }
+
+.search-scope.is-active { color: var(--search-paper); background: var(--search-ink); border-color: var(--search-ink); }
+
 /* 状态行：数量 + 一道延伸到右边的细线。 */
 .search-meta {
     display: flex;

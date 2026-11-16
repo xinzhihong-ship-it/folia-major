@@ -703,6 +703,9 @@ export default {
     "songUnavailableTag": "Không khả dụng",
     "songVideoTag": "MV",
     "queueShuffled": "Đã xáo trộn hàng đợi",
+    "leadingPlayerOwnsQueue": "Hàng đợi này đi theo trình phát bên ngoài đang phát: hãy sắp xếp lại hoặc xóa bài hát ở đó",
+    "leadingPlayerCannotQueue": "Không thể đưa các bài hát này vào hàng đợi của trình phát bên ngoài",
+    "leadingPlayerQueueFailed": "Không thể thêm bài hát vào hàng đợi của trình phát bên ngoài",
     "loopShuffleHint": "Tìm chế độ xáo trộn?",
     "loopShuffleHintAction": "Tìm hiểu",
     "queueCleared": "Đã xóa hàng đợi",
@@ -908,6 +911,7 @@ export default {
       "settings-help": { "title": "Mở Trợ giúp", "description": "Mở trợ giúp và phím tắt" },
       "ponder-current-page": { "title": "Khám phá trang này", "description": "Mở hướng dẫn tương tác cho trang hiện tại" },
       "provider-playback-setup": { "title": "Thiết lập phát nhạc của nền tảng", "description": "Mở danh sách thiết lập phát nhạc của nền tảng hiện tại" },
+      "open-shared-list": { "title": "Mở danh sách phát được chia sẻ", "description": "Mở danh sách phát bằng liên kết chia sẻ hoặc ID" },
       "settings-options": { "title": "Mở Tùy chọn", "description": "Mở trung tâm tùy chọn" },
       "settings-now-playing-card-position": { "title": "Đổi vị trí thẻ bài hát", "description": "Kéo thẻ bài hát đang phát đến vị trí mới" },
       "settings-ai-provider": { "title": "Cài đặt nhà cung cấp AI", "description": "Chọn nhà cung cấp AI và mô hình" },
@@ -1195,6 +1199,7 @@ export default {
       "settings-toggle-playback-fade": { "title": "Mờ âm khi dừng và tiếp tục", "description": "Bật/tắt hiệu ứng mờ âm ngắn khi tạm dừng và tiếp tục phát" },
       "settings-toggle-auto-skip-unplayable": { "title": "Tự động bỏ qua bài hát không thể phát", "description": "Bật/tắt đếm ngược bỏ qua khi bài hát bị giới hạn hoặc lỗi không rõ nguyên nhân" },
       "settings-toggle-shuffle-round-no-repeat": { "title": "Trộn theo vòng", "description": "Bật hoặc tắt: khi trộn, các bài đã nghe trong vòng này xếp ở sau, và vòng đã nghe hết sẽ tự trộn lại khi lặp danh sách" },
+      "settings-toggle-follow-external-player": { "title": "Theo trình phát bên ngoài", "description": "Bật hoặc tắt việc nhận bài mà trình phát bên ngoài bắt đầu phát trong cửa sổ của nó" },
       "settings-toggle-bottom-subtitle-overlay": { "title": "Bật/tắt lớp phụ đề phía dưới", "description": "Hiện hoặc ẩn toàn bộ lớp phụ đề phía dưới" },
       "settings-cycle-subtitle-content-mode": { "title": "Chuyển chế độ nội dung phụ đề", "description": "Chuyển đổi nội dung phụ đề giữa bản dịch, phiên âm La-tinh và cả hai" },
       "settings-subtitles": { "title": "Phụ đề", "description": "Số dòng phụ đề dưới cùng và nội dung từng dòng, nền phụ đề, cùng phụ đề phụ" },
@@ -1679,6 +1684,8 @@ export default {
     "placeholderPlaylist": "Tìm danh sách phát...",
     "sources": "Nguồn tìm kiếm",
     "kinds": "Loại tìm kiếm",
+    "scopes": "Phạm vi tìm kiếm",
+    "scopeAll": "Tất cả",
     "kindSong": "Bài hát",
     "kindAlbum": "Album",
     "kindPlaylist": "Danh sách phát",
@@ -1916,6 +1923,8 @@ export default {
     "loginNoteBodian": "Mở ứng dụng Bodian Music quét mã QR và xác nhận đăng nhập",
     "loginTitleFnMusic": "Đăng nhập fnOS Music",
     "loginNoteFnMusic": "Nhập địa chỉ máy chủ và tài khoản fnOS Music để phát nhạc từ NAS của bạn",
+    "loginTitleLxmusic": "Kết nối LX Music",
+    "loginNoteLxmusic": "Tìm bài hát và xem danh sách của LX Music tại đây; LX Music phát âm thanh",
     "loginTitleYtm": "Đăng nhập YouTube Music",
     "loginTitleAppleMusic": "Đăng nhập Apple Music",
     "loginNoteAppleMusic": "Đăng nhập trong cửa sổ Apple. Mật khẩu của bạn chỉ được gửi cho Apple.",
@@ -2231,6 +2240,7 @@ export default {
     "spotify": "Spotify",
     "qishui": "Qishui",
     "fnmusic": "fnOS",
+    "lxmusic": "LX Music",
   },
   "globalLyricOffset": {
     "title": "Độ lệch thời gian toàn cục",
@@ -3755,6 +3765,8 @@ export default {
     "autoSkipUnplayableDesc": "Khi một bài hát cần tài khoản hội viên/mua bản quyền, chỉ cho nghe thử, bị giới hạn khu vực hoặc gặp lỗi không rõ nguyên nhân, ứng dụng sẽ đếm ngược và chuyển sang bài tiếp theo như bài hát đã bị gỡ. Các bài hát yêu cầu đăng nhập và lỗi kết nối mạng sẽ không bị bỏ qua.",
     "shuffleRoundNoRepeat": "Trộn theo vòng",
     "shuffleRoundNoRepeatDesc": "Khi trộn hàng đợi hoặc phát ngẫu nhiên, các bài đã nghe trong vòng này được xếp sau các bài chưa nghe. Khi bật lặp danh sách, vòng đã nghe hết sẽ tự trộn lại. Chỉ theo dõi hàng đợi đã trộn; khi tắt, trộn như trước.",
+    "followExternalPlayer": "Theo trình phát bên ngoài",
+    "followExternalPlayerDesc": "Khi một trình phát bên ngoài tự quản lý hàng đợi bắt đầu phát bài trong cửa sổ của nó và Folia không đang phát bài của mình, Folia sẽ nhận bài đó và hiển thị lời.",
     "audioOutputDevice": "Thiết bị đầu ra hiện tại",
     "audioOutputRefresh": "Làm mới",
     "audioOutputUnsupported": "Môi trường này không hỗ trợ chuyển thiết bị âm thanh đầu ra.",
@@ -5020,6 +5032,19 @@ export default {
     "errorBadResponse": "Máy chủ trả về phản hồi không nhận dạng được",
     "errorBadServerUrl": "Địa chỉ máy chủ không hợp lệ, ví dụ: http://192.168.1.10:5666"
   },
+  "lxmusic": {
+    "connect": "Kết nối",
+    "connectNote": "Hãy mở LX Music (bản enhanced) và bật \"Cài đặt → Open API → Folia link\" trước. LX Music phát âm thanh bằng nguồn, chất lượng và thiết bị đầu ra của chính nó; Folia đi theo và hiển thị lời bài hát.",
+    "errorNotRunning": "Không kết nối được LX Music. Hãy chắc rằng ứng dụng đang mở và Folia link đã bật.",
+    "errorBadResponse": "Không đọc được phản hồi của LX Music. Hãy cập nhật LX Music lên phiên bản có Folia link."
+  },
+  "sharedList": {
+    "inputPlaceholder": "Dán liên kết danh sách phát; nếu chỉ có ID hãy ghi nền tảng trước, ví dụ \"wy 123456\"",
+    "opening": "Đang mở…",
+    "openFailed": "Không mở được danh sách phát này: {{reason}}",
+    "needSource": "Nếu chỉ có ID, hãy ghi nền tảng ở trước, ví dụ \"wy 123456\"",
+    "unavailable": "Không có nền tảng đã kết nối nào mở được danh sách phát chia sẻ"
+  },
   "hifi": {
     "settings": {
       "groupEngine": "Công cụ phát",
@@ -5101,7 +5126,8 @@ export default {
       "nativeProcessed": "Gốc, đã xử lý",
       "nativeUnconfirmed": "Gốc, đang kiểm tra",
       "transcoded": "Đã chuyển mã",
-      "webEngine": "Công cụ Web"
+      "webEngine": "Công cụ Web",
+      "externalPlayer": "Trình phát bên ngoài"
     },
     "web": {
       "openSignalPath": "Đường tín hiệu",

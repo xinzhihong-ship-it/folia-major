@@ -126,3 +126,12 @@
 - **我们不改上游**：Folia 不覆盖 fnOS 网页端文件，不保留客户端标识、签名或协议实现，只适配其公开 HTTP 接口。
 - **上游变了怎么跟**：fnOS 网页端改接口或字段后，`fnmusicApiBridge.cjs` 的请求与 `fnmusicProvider.ts` 的归一化要跟着改；登录失败、接口返回变化以 `[FnMusic]` 前缀日志为准。
 - **测试**：`test/unit/fnmusic/` 覆盖归一化、登录参数构造、翻页与可播性检查；桥接层逻辑在 `test/unit/electron/` 下用替身测操作白名单与加密配置恢复。
+
+## 洛雪音乐（`lxmusic`，仅桌面端）
+
+- **上游**：用户本机的洛雪音乐增强版（lx-music-desktop-enhanced，3.4.0 起）的「Folia 对接」本机接口。洛雪开着它时把端口和令牌写进系统应用数据目录下的 `lx-music-folia-link/connection.json`（Linux 有 `XDG_RUNTIME_DIR` 时在它下面），只监听 `127.0.0.1`，请求带 `Authorization: Bearer`，拒绝带 `Origin` 的请求。接口：`GET /status`（播放状态）、`POST /rpc`（`{ op, params }`，白名单见洛雪 `src/main/modules/foliaLink/ops.ts`）、`GET /events`（SSE：状态、列表变化）。
+- **版本**：无外部 npm 包；接口由洛雪增强版仓库维护，两边的白名单要一起改（`electron/lxmusic/lxmusicApiBridge.cjs` 的 `RPC_OPERATIONS`）。
+- **怎么用**：`electron/lxmusic/lxmusicApiBridge.cjs` 导出 `createLxmusicApiBridge({ store, onEvent })`，在主进程读连接文件、带令牌请求，令牌不进渲染进程；连接过（`link`）之后订阅事件流，经 `lxmusic-event` 转给主窗口。渲染进程的 `lxmusicTransport.ts` 只发操作名。播放走外部播放路线的「播放器主导」（`externalPlayback.leadsPlayback`）：声音由洛雪出，Folia 跟随它的队列、播放模式和音量。
+- **我们不改上游**：Folia 不读洛雪的数据库或配置文件，只用它的对接接口。
+- **上游变了怎么跟**：洛雪改了接口或状态字段，`lxmusicPlayback.ts` 的 `lxExternalStatusOf`、`lxmusicLibrary.ts` 的读取要跟着改；问题以 `[LxMusic]` 前缀日志为准。
+- **测试**：`test/unit/lxmusic/` 覆盖归一化、状态换算、队列拼法与桥的连接文件解析和请求。

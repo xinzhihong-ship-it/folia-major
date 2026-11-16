@@ -372,6 +372,14 @@ export class OnlineProviderError extends Error {
  */
 export interface ProviderSearchContext {
     session?: string;
+    /** The part of the provider a song search is narrowed to: one of its `getScopes` (all of it when absent). */
+    scope?: string;
+}
+
+/** A part of a provider a song search can be narrowed to (`OnlineSearchProvider.getScopes`), in its own words. */
+export interface ProviderSearchScope {
+    id: string;
+    name: string;
 }
 
 /** What a search looks for: songs, albums or playlists (`omni.getProviderSearchKinds`). */
@@ -393,6 +401,11 @@ export interface OnlineSearchProvider {
      * opens. Left out where the platform has no playlist search.
      */
     searchPlaylists?(query: string, limit: number, offset: number): Promise<ProviderPage<ProviderCollection>>;
+    /**
+     * The parts of the provider a song search can be narrowed to (`context.scope`), for a provider
+     * that searches several catalogues at once. Left out where a search is always the whole provider.
+     */
+    getScopes?(): Promise<ProviderSearchScope[]>;
 }
 
 export interface OnlinePlaybackProvider {
@@ -491,6 +504,30 @@ export interface ProviderExternalPlaybackStatus {
     seeking?: boolean;
     /** The player accepted a start/resume and is still buffering; this is not a user pause. */
     starting?: boolean;
+    /** The speed the track plays at (1 when absent): the clock runs at it between answers. */
+    rate?: number;
+    /**
+     * A leading player's own state (`OnlineExternalPlaybackProvider.leadsPlayback`), which the app
+     * shows as its own: its output level (0 to 1, linear) and mute, its play mode, and the revision
+     * of its queue (a new one means its queue changed and the app reads it again).
+     */
+    volume?: number;
+    muted?: boolean;
+    loopMode?: 'off' | 'all' | 'one';
+    queueRevision?: string;
+    /** The quality the player sounds the track at, in its own words (e.g. "FLAC"). */
+    qualityLabel?: string;
+}
+
+/** What a start in an external player is given besides the song: the queue it is played from. */
+export interface ProviderExternalPlayContext {
+    queue: SongResult[];
+}
+
+/** The song a leading player moved to by itself, and the queue it plays it from. */
+export interface ProviderExternalFollow {
+    song: SongResult;
+    queue: SongResult[];
 }
 
 /**
@@ -505,8 +542,47 @@ export interface OnlineExternalPlaybackProvider {
     prepareNext?(song: SongResult, upcoming: SongResult[]): Promise<void>;
     /** Whether a handoff can reuse an already prepared successor (not a guarantee of buffered audio). */
     isPrepared?(song: SongResult): boolean;
-    /** Starts `song` in the player at `startSec`, replacing whatever it played; resolves once started. */
-    play(song: SongResult, startSec: number): Promise<void>;
+    /**
+     * The player keeps a queue, a play mode and an output level of its own and moves through its
+     * queue by itself; the app follows it. A track it moves to (at an end, or by the listener in the
+     * player's own window) is shown in the app through `follow`, not paused as a foreign track; the
+     * listener's next and previous are asked of it (`skip`); its end does not move the app's queue;
+     * the app's queue mirrors its own (`getQueue`), and its volume, mute and play mode are the app's
+     * (both ways). Nothing of the app's queue is prepared in it, and its own single repeat is its
+     * play mode (`setLoopMode`), not `setRepeatOne`.
+     */
+    leadsPlayback?: boolean;
+    /**
+     * Starts `song` in the player at `startSec`, replacing whatever it played; resolves once started.
+     * `context.queue` is the queue the app plays it from, for a player that keeps a queue of its own.
+     */
+    play(song: SongResult, startSec: number, context?: ProviderExternalPlayContext): Promise<void>;
+    /** A leading player moves to its next or previous track by its own queue and play mode. */
+    skip?(direction: 'next' | 'prev'): Promise<void>;
+    /**
+     * The track a leading player moved to by itself (`status` names it), as a song of this provider,
+     * with the queue the player plays it from; null where it cannot be told. The next `play` of that
+     * song takes the player as it is instead of starting it again.
+     */
+    follow?(status: ProviderExternalPlaybackStatus): Promise<ProviderExternalFollow | null>;
+    /** A leading player's queue as it is now, around the track it plays. */
+    getQueue?(): Promise<SongResult[]>;
+    /** A leading player's play mode, in the app's three. */
+    setLoopMode?(mode: 'off' | 'all' | 'one'): Promise<void>;
+    /** A leading player's quality setting; the track it plays changes to it where it can. */
+    setQuality?(quality: AudioQualityPreference): Promise<void>;
+    /**
+     * A leading player plays `songs`, in order, after the track it plays now (`'next'`) or after the
+     * songs already waiting there (`'end'`), before going on with its queue. The app's queue then
+     * mirrors the player's again (`getQueue`).
+     */
+    queueInPlayer?(songs: SongResult[], position: 'next' | 'end'): Promise<void>;
+    /**
+     * Tells `tell` when a leading player starts a track the app may not follow yet (the listener
+     * started it in the player's own window while the app showed something else). Answers with the
+     * way to stop listening.
+     */
+    watchPlayer?(tell: (status: ProviderExternalPlaybackStatus) => void): () => void;
     /**
      * The player already has `song` loaded (started by a window of this app that is gone): take it
      * as this provider's current playback without starting it, so successors can be prepared for it.
@@ -515,8 +591,11 @@ export interface OnlineExternalPlaybackProvider {
     pause(): Promise<void>;
     resume(): Promise<void>;
     seek(seconds: number): Promise<void>;
-    /** Sets the player's own output level (0 to 1, linear, 0 when muted): its audio never passes through the app's gain. */
-    setVolume?(volume: number): Promise<void>;
+    /**
+     * Sets the player's own output level (0 to 1, linear, 0 when muted): its audio never passes through the app's gain.
+     * A leading player, which keeps a mute of its own, is given the level and the mute apart (`muted`).
+     */
+    setVolume?(volume: number, muted?: boolean): Promise<void>;
     /**
      * Turns the player's own single-track repeat on or off: on, it plays the track again by itself
      * at its end (no gap), its position going from the end back to the start. Only single loop:
@@ -879,6 +958,14 @@ export interface OnlineCatalogProvider {
     getArtistAlbums?(id: MediaId, limit: number, offset: number): Promise<ProviderPage<ProviderCollection>>;
     getArtistDetail?(id: MediaId): Promise<ProviderCollection | null>;
     getSubscriptionStatus?(type: 'playlist' | 'album', id: MediaId, collection?: ProviderCollection): Promise<boolean>;
+    /**
+     * Opens a collection shared from elsewhere by its link or id (a song list's share link the
+     * listener pasted), as a collection of this provider that `getPlaylistTracks` reads. `source` is
+     * where a bare id comes from (one of `getSharedCollectionSources`); a link tells it by itself.
+     */
+    openSharedCollection?(text: string, source?: string): Promise<ProviderCollection>;
+    /** Where a shared collection's bare id may come from, in the provider's own words. */
+    getSharedCollectionSources?(): Promise<Array<{ id: string; name: string }>>;
 }
 
 /**

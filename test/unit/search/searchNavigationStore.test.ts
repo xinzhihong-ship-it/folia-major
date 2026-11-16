@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveCommandPaletteSearchSource, useSearchNavigationStore } from '@/stores/useSearchNavigationStore';
 import { neteaseApi } from '@/services/onlineMusic/netease/netease';
 import { getNavidromeConfig, navidromeApi } from '@/services/navidromeService';
+import { omni } from '@/services/onlineMusic/omni';
 import type { LocalLibraryAssignment, LocalLibraryEntity } from '@/types/localLibrary';
 
 vi.mock('@/services/onlineMusic/netease/netease', () => ({
@@ -55,7 +56,26 @@ describe('useSearchNavigationStore', () => {
             scrollTop: 0,
             searchCache: {},
             searchHistory: [],
+            searchScopes: {},
         });
+    });
+
+    it('narrows an online song search to the kept scope, and keeps those results apart', async () => {
+        const search = vi.spyOn(omni, 'searchProviderSongs').mockResolvedValue({ items: [], total: 0, nextOffset: 0, hasMore: false });
+        try {
+            useSearchNavigationStore.getState().setSearchScope('netease', 'kw');
+            expect(useSearchNavigationStore.getState().searchScopes).toEqual({ netease: 'kw' });
+            await useSearchNavigationStore.getState().submitSearch({ query: 'a', sourceTab: 'netease', deps });
+            expect(search).toHaveBeenLastCalledWith('netease', 'a', { limit: 30, offset: 0 }, { scope: 'kw' });
+            expect(Object.keys(useSearchNavigationStore.getState().searchCache)).toEqual(['netease@kw:song:a']);
+
+            useSearchNavigationStore.getState().setSearchScope('netease', null);
+            expect(useSearchNavigationStore.getState().searchScopes).toEqual({});
+            await useSearchNavigationStore.getState().submitSearch({ query: 'a', sourceTab: 'netease', deps });
+            expect(search).toHaveBeenLastCalledWith('netease', 'a', { limit: 30, offset: 0 }, undefined);
+        } finally {
+            search.mockRestore();
+        }
     });
 
     it('uses the active online provider for command palette searches', () => {

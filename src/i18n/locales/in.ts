@@ -703,6 +703,9 @@ export default {
     "songUnavailableTag": "Tidak Tersedia",
     "songVideoTag": "MV",
     "queueShuffled": "Antrean diacak",
+    "leadingPlayerOwnsQueue": "Antrean ini mengikuti pemutar eksternal yang sedang memutar: ubah urutan atau hapus lagu di sana",
+    "leadingPlayerCannotQueue": "Lagu-lagu ini tidak bisa masuk ke antrean pemutar eksternal",
+    "leadingPlayerQueueFailed": "Lagu tidak dapat ditambahkan ke antrean pemutar eksternal",
     "loopShuffleHint": "Mencari putar acak?",
     "loopShuffleHintAction": "Pelajari caranya",
     "queueCleared": "Antrean dikosongkan",
@@ -908,6 +911,7 @@ export default {
       "settings-help": { "title": "Buka Bantuan", "description": "Buka panduan dan pintasan" },
       "ponder-current-page": { "title": "Ponder halaman ini", "description": "Buka panduan interaktif untuk halaman saat ini" },
       "provider-playback-setup": { "title": "Pengaturan pemutaran platform", "description": "Buka daftar pengaturan pemutaran platform saat ini" },
+      "open-shared-list": { "title": "Buka daftar lagu yang dibagikan", "description": "Buka daftar lagu dari tautan bagikan atau ID-nya" },
       "settings-options": { "title": "Buka Opsi", "description": "Buka pusat opsi" },
       "settings-now-playing-card-position": { "title": "Atur posisi kartu lagu", "description": "Seret kartu yang sedang diputar ke posisi baru" },
       "settings-ai-provider": { "title": "Pengaturan penyedia AI", "description": "Pilih penyedia dan model AI" },
@@ -1195,6 +1199,7 @@ export default {
       "settings-toggle-playback-fade": { "title": "Fade saat jeda dan lanjut", "description": "Alihkan fade singkat saat menjeda dan melanjutkan pemutaran" },
       "settings-toggle-auto-skip-unplayable": { "title": "Lewati lagu yang tidak dapat diputar", "description": "Alihkan hitung mundur untuk melewati lagu yang dibatasi atau gagal diputar tanpa alasan yang jelas" },
       "settings-toggle-shuffle-round-no-repeat": { "title": "Acak per putaran", "description": "Nyalakan atau matikan: lagu yang sudah didengar di putaran ini ditaruh di belakang saat mengacak, dan putaran yang selesai diacak lagi saat putar ulang daftar" },
+      "settings-toggle-follow-external-player": { "title": "Ikuti pemutar eksternal", "description": "Aktifkan atau matikan pengambilan lagu yang dimulai pemutar eksternal di jendelanya sendiri" },
       "settings-toggle-bottom-subtitle-overlay": { "title": "Alihkan overlay subtitle bawah", "description": "Tampilkan atau sembunyikan seluruh overlay subtitle bawah" },
       "settings-cycle-subtitle-content-mode": { "title": "Putar mode konten subtitle", "description": "Putar konten subtitle antara terjemahan, romanisasi, dan romanisasi plus terjemahan" },
       "settings-subtitles": { "title": "Subtitel", "description": "Jumlah baris subtitel bawah dan isi tiap baris, latarnya, serta subtitel sekunder" },
@@ -1679,6 +1684,8 @@ export default {
     "placeholderPlaylist": "Cari playlist...",
     "sources": "Sumber pencarian",
     "kinds": "Jenis pencarian",
+    "scopes": "Cakupan pencarian",
+    "scopeAll": "Semua",
     "kindSong": "Lagu",
     "kindAlbum": "Album",
     "kindPlaylist": "Playlist",
@@ -1916,6 +1923,8 @@ export default {
     "loginNoteBodian": "Pindai kode ini dengan aplikasi Bodian Music dan konfirmasi masuk",
     "loginTitleFnMusic": "Masuk ke fnOS Music",
     "loginNoteFnMusic": "Masukkan alamat server dan akun fnOS Music untuk memutar musik NAS Anda",
+    "loginTitleLxmusic": "Hubungkan LX Music",
+    "loginNoteLxmusic": "Cari lagu dan jelajahi daftar LX Music di sini; LX Music yang memutar suaranya",
     "loginTitleYtm": "Masuk ke YouTube Music",
     "loginTitleAppleMusic": "Masuk ke Apple Music",
     "loginNoteAppleMusic": "Masuk melalui jendela Apple. Kata sandi Anda hanya diberikan kepada Apple.",
@@ -2231,6 +2240,7 @@ export default {
     "spotify": "Spotify",
     "qishui": "Qishui",
     "fnmusic": "fnOS",
+    "lxmusic": "LX Music",
   },
   "globalLyricOffset": {
     "title": "Offset Waktu Global",
@@ -3755,6 +3765,8 @@ export default {
     "autoSkipUnplayableDesc": "Bila lagu memerlukan langganan atau pembelian, hanya tersedia pratinjau, diblokir di wilayah Anda, atau gagal diputar tanpa alasan yang jelas, hitung mundur lalu lewati ke lagu berikutnya, seperti lagu yang telah dihapus. Lagu yang memerlukan login dan masalah jaringan tidak pernah dilewati.",
     "shuffleRoundNoRepeat": "Acak per putaran",
     "shuffleRoundNoRepeatDesc": "Saat mengacak antrean atau memutar acak, lagu yang sudah didengar di putaran ini ditaruh setelah lagu yang belum. Dengan putar ulang daftar, putaran yang selesai diacak lagi otomatis. Hanya antrean yang diacak yang dilacak; jika mati, pengacakan seperti biasa.",
+    "followExternalPlayer": "Ikuti pemutar eksternal",
+    "followExternalPlayerDesc": "Saat pemutar eksternal yang mengelola antreannya sendiri memulai lagu di jendelanya sendiri dan Folia tidak sedang memutar lagunya sendiri, Folia mengambil lagu itu dan menampilkan liriknya.",
     "audioOutputDevice": "Perangkat Output Saat Ini",
     "audioOutputRefresh": "Segarkan",
     "audioOutputUnsupported": "Lingkungan ini tidak mendukung penggantian perangkat output audio.",
@@ -5020,6 +5032,19 @@ export default {
     "errorBadResponse": "Server mengembalikan respons yang tidak dikenali",
     "errorBadServerUrl": "Alamat server tidak valid, contoh: http://192.168.1.10:5666"
   },
+  "lxmusic": {
+    "connect": "Hubungkan",
+    "connectNote": "Buka LX Music (edisi enhanced) dan nyalakan \"Pengaturan → Open API → Folia link\" terlebih dahulu. LX Music memutar suara dengan sumber, kualitas, dan perangkat keluarannya sendiri; Folia mengikutinya dan menampilkan lirik.",
+    "errorNotRunning": "Tidak dapat terhubung ke LX Music. Pastikan aplikasinya terbuka dan Folia link menyala.",
+    "errorBadResponse": "Jawaban LX Music tidak dapat dikenali. Perbarui LX Music ke versi yang memiliki Folia link."
+  },
+  "sharedList": {
+    "inputPlaceholder": "Tempel tautan daftar lagu; untuk ID saja tulis platformnya dulu, mis. \"wy 123456\"",
+    "opening": "Membuka…",
+    "openFailed": "Daftar lagu ini tidak dapat dibuka: {{reason}}",
+    "needSource": "Untuk ID saja, tulis platformnya di depan, mis. \"wy 123456\"",
+    "unavailable": "Tidak ada platform terhubung yang bisa membuka daftar lagu yang dibagikan"
+  },
   "hifi": {
     "settings": {
       "groupEngine": "Mesin pemutaran",
@@ -5101,7 +5126,8 @@ export default {
       "nativeProcessed": "Native, diproses",
       "nativeUnconfirmed": "Native, memeriksa",
       "transcoded": "Ditranskode",
-      "webEngine": "Mesin web"
+      "webEngine": "Mesin web",
+      "externalPlayer": "Pemutar eksternal"
     },
     "web": {
       "openSignalPath": "Jalur sinyal",

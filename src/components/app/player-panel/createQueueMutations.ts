@@ -11,6 +11,7 @@ import type { AudioQualityPreference, MediaId } from '../../../types/onlineMusic
 import type { QueueBatchAction } from '../../command-palette/queueQuery';
 import { setStatusMessage as setStatusMsg } from '../../../stores/useStatusMessageStore';
 import { setPlayQueue } from '../../../stores/usePlaybackStore';
+import { queueInLeadingPlayer, refuseLeadingQueueEdit, songsForLeadingPlayer } from '../playback/leadingPlayerQueue';
 
 // src/components/app/player-panel/createQueueMutations.ts
 
@@ -64,7 +65,9 @@ export const createQueueMutations = ({
 
     // 所有就地编辑（播放页队列页、命令面板、墙面工具的队列浮岛）都经这里：写 store、持久化，正在播放那首前后的
     // 预取窗口变了就重新预取（prefetchService.refreshPrefetchAfterQueueEdit；编辑前的队列就是这一份 playQueue）。
+    // 外部播放器主导时队列是播放器的，就地编辑不做（leadingPlayerQueue.ts）。
     const updateQueueOrder = (nextQueue: SongResult[]) => {
+        if (refuseLeadingQueueEdit(t)) return;
         setPlayQueue(nextQueue);
         void persistLastPlaybackCache(currentSong, nextQueue);
         refreshPrefetchAfterQueueEdit(currentSong, playQueue, nextQueue, audioQuality, userId);
@@ -83,6 +86,12 @@ export const createQueueMutations = ({
     };
 
     const moveQueueSongToNext = (index: number) => {
+        // 外部播放器主导：这首交给播放器，排在正在放的这首后面
+        const forPlayer = songsForLeadingPlayer(playQueue[index] ? [playQueue[index]] : []);
+        if (forPlayer) {
+            queueInLeadingPlayer(forPlayer, 'next', t);
+            return;
+        }
         const nextQueue = moveQueueItemToNext(playQueue, index, queueIndexOf(playQueue, currentSong));
         if (nextQueue === playQueue) return;
         updateQueueOrder(nextQueue);
@@ -96,6 +105,15 @@ export const createQueueMutations = ({
     };
 
     const applyQueueBatchOperation = (action: QueueBatchAction, targetIndices: number[]) => {
+        if (action === 'next') {
+            const forPlayer = songsForLeadingPlayer(targetIndices.flatMap(index => (playQueue[index] ? [playQueue[index]] : [])));
+            if (forPlayer) {
+                queueInLeadingPlayer(forPlayer, 'next', t);
+                return forPlayer.length > 0;
+            }
+        } else if (refuseLeadingQueueEdit(t)) {
+            return false;
+        }
         const result = transformQueueBatch({
             queue: playQueue,
             targetIndices,

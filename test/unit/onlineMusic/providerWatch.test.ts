@@ -47,7 +47,8 @@ describe('what a provider watches while the app is open', () => {
     });
 
     it('is declared only by the provider that has something to watch', () => {
-        expect(listOnlineMusicProviders().filter(provider => provider.watch).map(provider => provider.id)).toEqual(['netease']);
+        // lxmusic watches the lists LX Music says changed, to drop the ones it keeps.
+        expect(listOnlineMusicProviders().filter(provider => provider.watch).map(provider => provider.id)).toEqual(['netease', 'lxmusic']);
     });
 
     it('does nothing where there is no desktop bridge', async () => {

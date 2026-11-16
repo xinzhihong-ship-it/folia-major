@@ -1,0 +1,161 @@
+name: Publish LX fork build
+
+# 落雪对接分支的手动打包：Windows x64 安装包与 macOS arm64 的 dmg / zip，不签名（与上游一致）。
+# 版本号由触发时填写（如 0.7.28-lx.1）；发布到本仓库的 Releases，应用内检查更新看的就是这里。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to stamp, e.g. 0.7.28-lx.1'
+        required: true
+        type: string
+      prerelease:
+        description: 'Publish as a pre-release (test build; in-app update checks skip pre-releases)'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lx-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - name: Check version format
+        id: check
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${INPUT_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-lx\.[0-9]+)?$ ]]; then
+            echo "Version must look like 0.7.28-lx.1" >&2
+            exit 1
+          fi
+          echo "version=${INPUT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${INPUT_VERSION}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build on ${{ matrix.os }}
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            builder_args: --win nsis --x64
+          - os: macos-latest
+            builder_args: --mac dmg zip --arm64
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Rust toolchain
+        if: runner.os == 'Windows'
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache wallpaper-helper Cargo build
+        if: runner.os == 'Windows'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packaging/windows/wallpaper-helper
+
+      - name: Build wallpaper helper (Windows only)
+        if: runner.os == 'Windows'
+        run: node packaging/windows/build-wallpaper-helper.mjs
+
+      - name: Stamp package metadata
+        shell: bash
+        env:
+          TARGET_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          node -e "const fs=require('fs'); const pkg=require('./package.json'); pkg.version=process.env.TARGET_VERSION; pkg.foliaReleaseChannel='realeco'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+
+      - name: Build web app for Electron
+        env:
+          ELECTRON: 'true'
+          APP_VERSION_LABEL: LX
+          APP_RELEASE_CHANNEL: realeco
+        run: npm run build
+
+      - name: Cache MNN runtime build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/.mnn-src
+            build/mnn
+          key: mnn-${{ runner.os }}-${{ hashFiles('build/buildMnnRuntime.mjs', 'native/folia-mnn/**') }}
+
+      - name: Package Electron app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder ${{ matrix.builder_args }} --publish never --config.publish.channel=latest
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: lx-${{ matrix.os }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.blockmap
+            release/*.yml
+            !release/builder-debug.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish release
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: lx-artifacts
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          PRERELEASE: ${{ github.event.inputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' files < <(find lx-artifacts -type f -print0)
+          NOTES_FILE=.github/lx-release-notes.md
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
+            gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --notes-file "${NOTES_FILE}"
+          else
+            flags=()
+            if [[ "${PRERELEASE}" == "true" ]]; then flags+=(--prerelease); fi
+            gh release create "${RELEASE_TAG}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" --title "Folia ${RELEASE_TAG}（落雪对接版）" --notes-file "${NOTES_FILE}" --target "${GITHUB_SHA}" "${flags[@]}"
+          fi

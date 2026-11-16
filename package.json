@@ -97,7 +97,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "chthollyphile",
+        "owner": "xinzhihong-ship-it",
         "repo": "folia-major"
       }
     ],

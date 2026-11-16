@@ -2737,9 +2737,10 @@ const MOD_SYSTEM_ENABLED_SETTING_KEY = 'MOD_SYSTEM_ENABLED';
 const DEFAULT_STAGE_API_PORT = 32107;
 const DEFAULT_OBS_BROWSER_SOURCE_PORT = 32108;
 const DEFAULT_LYRIC_API_PORT = 32109;
-const FOLIA_RELEASES_URL = 'https://github.com/chthollyphile/folia-major/releases';
+// 落雪对接分支：检查更新看分支仓库的发布页，不会被官方版本覆盖回去（上游是 chthollyphile/folia-major）。
+const FOLIA_RELEASES_URL = 'https://github.com/xinzhihong-ship-it/folia-major/releases';
 const FOLIA_GITHUB_REPOSITORY = {
-  owner: 'chthollyphile',
+  owner: 'xinzhihong-ship-it',
   repo: 'folia-major',
 };
 const WINDOWS_APP_USER_MODEL_ID = 'top.izuna.foliamajor';

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { LogOut, RefreshCw, Crown, User as UserIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AudioQualityPreference } from '../../types/onlineMusic';
@@ -6,6 +6,7 @@ import type { LibraryAccountController, LibraryAccountSnapshot } from '../../lib
 import { useLibraryAccountProviders, useLibraryAccountSelector } from '../../library/core/account/useLibraryAccount';
 import { canLogoutProvider } from '../../library/core/account/accountRules';
 import { omni } from '../../services/onlineMusic/omni';
+import { getLeadingPlayerQuality, setLeadingPlayerQuality, subscribeExternalPlayback } from '../../services/onlineMusic/externalPlayback';
 import { providerDisplayName } from '../../i18n/providerName';
 import { openLoginWindow } from '../login/loginWindowStore';
 import { PlatformMark } from '../login/PlatformMark';
@@ -47,6 +48,8 @@ const AUDIO_QUALITY_OPTIONS: Array<{
 
 const selectLogoutPending = (snapshot: LibraryAccountSnapshot) => snapshot.logout.status === 'pending';
 
+const subscribePlayerQuality = (notify: () => void) => subscribeExternalPlayback(() => { notify(); });
+
 const AccountTab: React.FC<AccountTabProps> = ({
     accountController,
     audioQuality,
@@ -68,7 +71,10 @@ const AccountTab: React.FC<AccountTabProps> = ({
     // value for every provider: where this one does not list it, the level it stands for here is lit.
     const qualityLevels = omni.getAudioQualityLevels(activeProviderId);
     const qualityOptions = AUDIO_QUALITY_OPTIONS.filter(option => qualityLevels.includes(option.value));
-    const litQuality = omni.resolveAudioQuality(activeProviderId, audioQuality);
+    // A player that leads playback (externalPlayback) keeps a quality setting of its own: while it plays
+    // this provider's song its setting is lit, and a pick is asked of it as well as stored.
+    const playerQuality = useSyncExternalStore(subscribePlayerQuality, () => getLeadingPlayerQuality(activeProviderId), () => null);
+    const litQuality = playerQuality ?? omni.resolveAudioQuality(activeProviderId, audioQuality);
 
     const handleLogout = () => accountController.logout(activeProviderId);
     // The sign-in of the platform in use ran out: the account has left, and the row says so.
@@ -133,7 +139,11 @@ const AccountTab: React.FC<AccountTabProps> = ({
                     options={qualityOptions.map(option => ({ value: option.value, label: t(option.labelKey) }))}
                     // (The lit level is where the stored preference already stands on this provider: choosing it
                     // changes nothing here, and must not lower what is stored for the other providers.)
-                    onChange={(quality) => { if (quality !== litQuality) onAudioQualityChange(quality); }}
+                    onChange={(quality) => {
+                        if (quality === litQuality) return;
+                        if (playerQuality) setLeadingPlayerQuality(quality);
+                        onAudioQualityChange(quality);
+                    }}
                 />
             </PanelRow>
 

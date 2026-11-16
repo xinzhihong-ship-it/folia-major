@@ -518,8 +518,8 @@ export interface ProviderExternalPlaybackStatus {
     /** The quality the player sounds the track at, in its own words (e.g. "FLAC"). */
     qualityLabel?: string;
     /**
-     * A leading player's own quality setting, in the app's levels: the app's preference shows it (a
-     * setting above the app's highest level is that level).
+     * A leading player's own quality setting, in the app's levels (a setting above the app's highest
+     * level is that level): the app shows it while the player plays, without writing its preference.
      */
     quality?: AudioQualityPreference;
 }

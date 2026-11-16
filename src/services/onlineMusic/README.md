@@ -105,8 +105,11 @@ Apple Music 的推荐能力已接入个人 FM（Apple personal station 持续补
 
 播放同样走 `external` 路线，但播放器声明了 `externalPlayback.leadsPlayback`（「播放器主导」，路线本身不写平台名）：
 
-- 队列、播放模式、音量、静音、音质以播放器为准，读到的写进 Folia 的设置（不回写），Folia 这边改了再发给播放器；
-  刚改过的两秒内播放器的旧答复不覆盖。
+- 队列、播放模式、音量、静音以播放器为准，读到的写进 Folia 的设置（不回写），Folia 这边改了再发给播放器；
+  刚改过的两秒内播放器的旧答复不覆盖。音质是例外：Folia 的音质偏好所有平台共用一个，播放器的音质只显示
+  （`getLeadingPlayerQuality`），不写进偏好；在 Folia 里选了才发给播放器。
+- 起播时 Folia 交来的队列就是那张列表（按播放器的顺序）就从列表放，被打乱、筛过、加过歌时把这份队列交给
+  播放器的临时列表（`lxmusic/lxmusicPlayback.ts` 的 `lxStartTargetOf`），起播后照回来的队列和 Folia 显示的一样。
 - 播放器自己换了歌（放完、在它自己的窗口里切歌），路线发 `player-moved`，`useExternalPlaybackBridge` 经
   `follow` 读到那首和它的队列，再经 `playSong` 换上（`play` 认出是接手，不叫播放器重放）。读回来时已经过时
   （用的人点了别的、播放器又换了）就丢掉；没跟上的五秒后再提醒一次。放完一首不移动 Folia 的队列。

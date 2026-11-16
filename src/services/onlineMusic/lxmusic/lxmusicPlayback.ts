@@ -1,9 +1,10 @@
-import type { UnifiedSong } from '../../../types';
+import type { SongResult, UnifiedSong } from '../../../types';
 import type { AudioQualityPreference, OnlineExternalPlaybackProvider, ProviderExternalPlaybackStatus } from '../../../types/onlineMusic';
 import { OnlineProviderError } from '../../../types/onlineMusic';
 import { requestLxmusic, subscribeLxmusicEvents } from './lxmusicTransport';
-import { isLxMusicInfo, LXMUSIC_PROVIDER_ID, lxMusicIdOf, lxMusicInfoOf, lxSongOriginOf, normalizeLxmusicSong, withLxCover, type LxMusicInfo } from './lxmusicNormalize';
+import { isLxMusicInfo, LXMUSIC_PROVIDER_ID, lxMusicIdOf, lxMusicInfoOf, lxSongOriginOf, normalizeLxmusicSong, withLxCover, type LxMusicInfo, type LxSongOrigin } from './lxmusicNormalize';
 import { readLxCoverUrl } from './lxmusicCover';
+import { readLxListSongIds, readLxShareSongIds } from './lxmusicLibrary';
 
 // src/services/onlineMusic/lxmusic/lxmusicPlayback.ts
 // 洛雪放歌，Folia 跟着：外部播放路线的「播放器主导」一侧（leadsPlayback）。洛雪有自己的播放列表、播放模式、
@@ -118,6 +119,50 @@ export const composeLxQueue = (answer: LxQueueAnswer, currentId: string | null, 
     return [...head, ...later.filter(song => song.id !== currentId), ...list];
 };
 
+/** 洛雪一次接的队列最多这么多首（它接口一批的上限）：更长时取播放的那首起的一段。 */
+const LX_QUEUE_LIMIT = 1000;
+
+type LxStartTarget = { target: string } & Record<string, unknown>;
+
+/**
+ * 在 Folia 里起播一首洛雪的歌，交给洛雪的方式。歌自带的来源说它从哪来：稍后播放里的从稍后播放放；搜索结果照
+ * 洛雪搜索页的做法进试听列表；我的列表、分享歌单里的，Folia 交来的队列就是那张列表（按洛雪的顺序；稍后播放的
+ * 不算，列表还没读完时是开头那一段也算）时从那张列表放；队列被打乱、筛过、加过歌时，把这份队列交给洛雪的
+ * 临时列表，照它的顺序往下放（洛雪那边的队列于是和 Folia 显示的一样）。`readOrder` 读那张列表的顺序。
+ */
+export async function lxStartTargetOf(
+    song: SongResult,
+    queue: SongResult[] | undefined,
+    readOrder: (origin: LxSongOrigin) => Promise<string[]>,
+): Promise<LxStartTarget> {
+    const id = lxMusicIdOf(song);
+    const info = lxMusicInfoOf(song);
+    const origin = lxSongOriginOf(song);
+    if (origin.later) return { target: 'later', musicInfos: [info], now: true };
+    const fromList: LxStartTarget | null = origin.share
+        ? { target: 'songlist', text: origin.share.text, source: origin.share.source, musicId: id }
+        : origin.listId
+            ? { target: 'list', listId: origin.listId, musicId: id }
+            : null;
+    if (!fromList) return { target: 'search', musicInfo: info };
+    // 队列里洛雪的歌（不算稍后播放的）
+    const own = (queue ?? []).filter(item => !lxSongOriginOf(item).later).flatMap(item => {
+        try { return [lxMusicInfoOf(item)]; } catch { return []; }
+    });
+    const index = own.findIndex(item => item.id === id);
+    if (index < 0) return fromList;
+    let order: string[];
+    try {
+        order = await readOrder(origin);
+    } catch (error) {
+        console.warn('[LxMusic] could not read the list order to start from: playing from the list', error);
+        return fromList;
+    }
+    if (own.length <= order.length && own.every((item, at) => item.id === order[at])) return fromList;
+    const start = Math.max(0, Math.min(index, own.length - LX_QUEUE_LIMIT));
+    return { target: 'queue', musicInfos: own.slice(start, start + LX_QUEUE_LIMIT), musicId: id };
+}
+
 /** 等一个读取最多这么久：读完了回它的结果，没读完或读失败回 null（读到的封面照样留着）。 */
 const within = <T>(work: Promise<T>, ms: number): Promise<T | null> => new Promise(resolve => {
     const timer = setTimeout(() => { resolve(null); }, ms);
@@ -174,13 +219,12 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
         isPrepared: song => {
             try { return isHandedOff(lxMusicIdOf(song)); } catch { return false; }
         },
-        async play(song, startSec) {
+        async play(song, startSec, context) {
             const id = lxMusicIdOf(song);
             // 洛雪自己换到了这首（follow）：它已经在放，什么都不用做
             const handedOff = isHandedOff(id);
             handoff = null;
             if (handedOff) return;
-            const info = lxMusicInfoOf(song);
             const seconds = Math.max(0, Number.isFinite(startSec) ? startSec : 0);
             // 洛雪已经停在这首上（Folia 重开后点播放、点了正在放的那首）：接着放，不从头开始。现读一次，旧的状态可能已经换了歌
             const state = await readState().catch(() => null);
@@ -190,14 +234,9 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
                 console.info('[LxMusic] resumed the song LX Music already has');
                 return;
             }
-            const origin = lxSongOriginOf(song);
-            const target = origin.later
-                ? { target: 'later', musicInfos: [info], now: true }
-                : origin.share
-                    ? { target: 'songlist', text: origin.share.text, source: origin.share.source, musicId: id }
-                    : origin.listId
-                        ? { target: 'list', listId: origin.listId, musicId: id }
-                        : { target: 'search', musicInfo: info };
+            const target = await lxStartTargetOf(song, context?.queue, origin => (
+                origin.share ? readLxShareSongIds(origin.share.source, origin.share.text) : readLxListSongIds(origin.listId ?? '')
+            ));
             await requestLxmusic('play', target);
             if (seconds > 1) await control('seek', seconds);
             console.info('[LxMusic] play started', { target: target.target });

@@ -44,6 +44,10 @@ const readShareSongs = async (source: string, text: string): Promise<UnifiedSong
     return songs;
 };
 
+/** 洛雪一张我的列表、一张分享歌单里歌的顺序（id）：起播时和 Folia 交来的队列比一比（lxmusicPlayback.ts）。 */
+export const readLxListSongIds = async (listId: string): Promise<string[]> => (await readListSongs(listId)).map(song => String(song.id));
+export const readLxShareSongIds = async (source: string, text: string): Promise<string[]> => (await readShareSongs(source, text)).map(song => String(song.id));
+
 /** 列表变了（洛雪推来新的版本号）：留着的整张列表作废。 */
 export const forgetKeptLxLists = () => {
     for (const key of [...keptLists.keys()]) if (!key.startsWith('share:')) keptLists.delete(key);

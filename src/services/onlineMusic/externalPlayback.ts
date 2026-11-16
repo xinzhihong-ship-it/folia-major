@@ -1,4 +1,4 @@
-import type { ProviderExternalPlayContext, ProviderExternalPlaybackStatus } from '../../types/onlineMusic';
+import type { AudioQualityPreference, OnlineProviderId, ProviderExternalPlayContext, ProviderExternalPlaybackStatus } from '../../types/onlineMusic';
 import type { SongResult } from '../../types';
 import { PlayerState } from '../../types';
 import { usePlaybackStore, setAudioSrc, setDuration, setPlaybackRoute, setPlayerState } from '../../stores/usePlaybackStore';
@@ -104,6 +104,10 @@ type ExternalSession = {
     followingAt: number;
     /** The quality the player last said it sounds the track at, in its own words ("FLAC"). */
     qualityLabel: string | null;
+    /** A leading player's own quality setting, in the app's levels, as it last said it. */
+    playerQuality: AudioQualityPreference | null;
+    /** The level last sent to a leading player that it has not yet said back. */
+    requestedQuality: AudioQualityPreference | null;
 };
 
 export const externalMediaShim = new MediaShim('external:');
@@ -146,7 +150,6 @@ let seenQueueRevision: string | null = null;
 /** When the listener last changed the volume / the loop mode here (performance.now). */
 let localVolumeChangeAt = 0;
 let localLoopChangeAt = 0;
-let localQualityChangeAt = 0;
 /** Set while a leading player's own state is written into the app's settings: no echo back. */
 let adoptingPlayerState = false;
 const listeners = new Set<(event: ExternalPlaybackEvent) => void>();
@@ -347,17 +350,37 @@ function syncLeadingLoopMode(): void {
 }
 
 /** Sends a leading player the quality the listener picked here. */
-function syncLeadingQuality(): void {
+function syncLeadingQuality(quality: AudioQualityPreference = useAudioSettingsStore.getState().audioQuality): void {
     const current = session;
     if (!current?.leads || current.handedOver || !isExternalRoute()) return;
-    const quality = useAudioSettingsStore.getState().audioQuality;
+    // Already the player's setting, or already asked of it: nothing to send.
+    const level = omni.resolveAudioQualityForSong(current.song, quality);
+    if (level === current.playerQuality || level === current.requestedQuality) return;
+    current.requestedQuality = level;
     void omni.setExternalPlaybackQuality(current.song, quality).then(() => {
         console.info('[ExternalPlayback] the leading player quality was set', { quality });
     }, (error: unknown) => {
+        if (current.requestedQuality === level) current.requestedQuality = null;
         console.warn('[ExternalPlayback] the leading player quality could not be set', error);
         emit({ type: 'failure', error });
     });
 }
+
+/**
+ * A leading player's own quality setting while the route plays a song of `providerId` there; null
+ * otherwise. The app shows it in place of its preference, which is one for every provider and is not
+ * written from the player.
+ */
+export const getLeadingPlayerQuality = (providerId: OnlineProviderId): AudioQualityPreference | null => {
+    const current = session;
+    if (!current?.leads || current.handedOver || !isExternalRoute()) return null;
+    return getOnlineProviderIdForSong(current.song) === providerId ? current.playerQuality : null;
+};
+
+/** The listener picked a quality while a leading player plays: it is asked of that player. */
+export const setLeadingPlayerQuality = (quality: AudioQualityPreference): void => {
+    syncLeadingQuality(quality);
+};
 
 /**
  * A leading player's own volume, mute and play mode become the app's, and a new revision of its
@@ -381,11 +404,11 @@ const adoptLeadingPlayerState = (current: ExternalSession, status: ProviderExter
             // Quietly: the listener did not press the repeat button, so no toast says it changed.
             if (settings.loopMode !== status.loopMode) settings.handleSetLoopModeQuietly(status.loopMode);
         }
-        // The player's quality setting, in the app's levels: taken only where it is not already what the
-        // app's preference resolves to for this provider (one preference serves every provider).
-        if (status.quality && now - localQualityChangeAt > LOCAL_CHANGE_HOLD_MS
-            && omni.resolveAudioQualityForSong(current.song, settings.audioQuality) !== status.quality) {
-            settings.setAudioQuality(status.quality);
+        // The player's quality setting is shown as it is (getLeadingPlayerQuality), not written into the
+        // app's preference: that one serves every provider, and the player's setting is its own.
+        if (status.quality) {
+            current.playerQuality = status.quality;
+            if (current.requestedQuality === status.quality) current.requestedQuality = null;
         }
     } finally {
         adoptingPlayerState = false;
@@ -701,7 +724,7 @@ export async function beginExternalPlayback(song: SongResult, startSec = 0, cont
     session = {
         song, songKey, attempt, clock, durationSec,
         announced: false, playing: false, starting: false, sampledPosition: Math.max(0, startSec), prefetchReady: false, live: false, ended: false, foreign: false, handedOver: false, preparedQueueKey: '', positionRevision: 0, seekPending: false, seeking: false,
-        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null,
+        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null, playerQuality: null, requestedQuality: null,
     };
     failureNoted = false;
     externalMediaShim.beginTrack(songKey);
@@ -788,7 +811,7 @@ export async function adoptExternalPlayback(song: SongResult): Promise<boolean> 
     session = {
         song, songKey, attempt, clock, durationSec,
         announced: false, playing: false, starting: false, sampledPosition: null, prefetchReady: false, live: false, ended: false, foreign: false, handedOver: false, preparedQueueKey: '', positionRevision: 0, seekPending: false, seeking: false,
-        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null,
+        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null, playerQuality: null, requestedQuality: null,
     };
     failureNoted = false;
     externalMediaShim.beginTrack(songKey);
@@ -1085,10 +1108,7 @@ export const installExternalPlayback = (): void => {
             localVolumeChangeAt = performance.now();
             setExternalPlaybackVolume();
         }
-        if (state.audioQuality !== previous.audioQuality) {
-            localQualityChangeAt = performance.now();
-            syncLeadingQuality();
-        }
+        if (state.audioQuality !== previous.audioQuality) syncLeadingQuality();
     });
     usePlaybackStore.subscribe((state, previous) => {
         if (ownWriteDepth > 0) return;

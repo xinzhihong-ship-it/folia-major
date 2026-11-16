@@ -104,6 +104,30 @@ describe('LX Music playback', () => {
         expect(playOps()).toEqual([{ target: 'songlist', text: 'link', source: 'wy', musicId: 'kw_1' }]);
     });
 
+    it('plays from the list when the queue is that list, the play-later songs and a partly read list included', async () => {
+        requests.answers.set('listMusics', [info('kw_1'), info('kw_2'), info('kw_3')]);
+        const player = createLxmusicExternalPlayback();
+        const inList = (id: string) => normalizeLxmusicSong(info(id), { listId: 'mine_a' });
+        const later = normalizeLxmusicSong(info('kw_8'), { later: true });
+        await player.play(inList('kw_2'), 0, { queue: [inList('kw_1'), inList('kw_2'), later, inList('kw_3')] });
+        await player.play(inList('kw_1'), 0, { queue: [inList('kw_1'), inList('kw_2')] });
+        expect(playOps()).toEqual([
+            { target: 'list', listId: 'mine_a', musicId: 'kw_2' },
+            { target: 'list', listId: 'mine_a', musicId: 'kw_1' },
+        ]);
+    });
+
+    it('hands a shuffled, filtered or added-to queue to LX Music as it stands', async () => {
+        requests.answers.set('listMusics', [info('kw_1'), info('kw_2'), info('kw_3')]);
+        const player = createLxmusicExternalPlayback();
+        const inList = (id: string) => normalizeLxmusicSong(info(id), { listId: 'mine_b' });
+        const other = { ...inList('x'), sourceRef: { kind: 'online' as const, providerId: 'netease', mediaId: '1' } };
+        await player.play(inList('kw_3'), 0, { queue: [inList('kw_3'), inList('kw_1'), other, inList('kw_2')] });
+        expect(playOps()).toEqual([
+            { target: 'queue', musicInfos: [info('kw_3'), info('kw_1'), info('kw_2')], musicId: 'kw_3' },
+        ]);
+    });
+
     it('plays a play-later song from the play-later list, without changing the playing list', async () => {
         const player = createLxmusicExternalPlayback();
         await player.play(normalizeLxmusicSong(info('kw_1'), { later: true }), 0);

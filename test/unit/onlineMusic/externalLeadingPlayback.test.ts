@@ -154,12 +154,29 @@ describe('external route with a leading player', () => {
         expect(omniMock.setExternalPlaybackVolume).toHaveBeenLastCalledWith(song, 0.4, true);
     });
 
-    it('takes the player quality setting into the preference without sending it back', async () => {
-        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ quality: 'lossless' }));
+    it('shows the player quality setting without writing the preference every provider shares', async () => {
+        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ quality: 'standard' }));
         await start();
         await vi.advanceTimersByTimeAsync(2500);
-        expect(useAudioSettingsStore.getState().audioQuality).toBe('lossless');
+        expect(engine.getLeadingPlayerQuality('lxmusic')).toBe('standard');
+        expect(engine.getLeadingPlayerQuality('netease')).toBeNull();
+        expect(useAudioSettingsStore.getState().audioQuality).toBe('high');
         expect(omniMock.setExternalPlaybackQuality).not.toHaveBeenCalled();
+    });
+
+    it('asks the player once for a quality the listener picks while it plays', async () => {
+        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ quality: 'standard' }));
+        await start();
+        await vi.advanceTimersByTimeAsync(600);
+        engine.setLeadingPlayerQuality('lossless');
+        useAudioSettingsStore.getState().setAudioQuality('lossless');
+        await flush();
+        expect(omniMock.setExternalPlaybackQuality).toHaveBeenCalledTimes(1);
+        expect(omniMock.setExternalPlaybackQuality).toHaveBeenCalledWith(song, 'lossless');
+        // The player's own setting already: nothing is sent
+        engine.setLeadingPlayerQuality('standard');
+        await flush();
+        expect(omniMock.setExternalPlaybackQuality).toHaveBeenCalledTimes(1);
     });
 
     it('does not move the app queue at the end of a track', async () => {

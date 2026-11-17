@@ -18,12 +18,13 @@ const LINK_FILE_NAME = 'connection.json';
 const LOCAL_OPERATIONS = new Set(['link', 'unlink', 'linkStatus', 'status']);
 /** 转给洛雪 /rpc 的操作（洛雪主进程 modules/foliaLink/ops.ts 的白名单） */
 const RPC_OPERATIONS = new Set([
-    'info', 'search', 'songlistDetail', 'songlistAll', 'songlistCollect', 'lyric', 'pic', 'play', 'control', 'queue',
-    'lists', 'listMusics', 'listAdd', 'listRemove', 'likedIds',
+    'info', 'search', 'songlistSearch', 'songlistDetail', 'songlistAll', 'songlistCollect', 'lyric', 'pic', 'play', 'control', 'queue',
+    'lists', 'listMusics', 'listAdd', 'listRemove', 'likedIds', 'accountLists', 'accountListMusics',
 ]);
 
 const DEFAULT_TIMEOUT_MS = 20_000;
-const TIMEOUTS = { search: 35_000, songlistDetail: 35_000, songlistAll: 185_000, songlistCollect: 185_000, play: 65_000, lyric: 35_000, pic: 25_000, status: 4_000 };
+// 平台账号的歌单要补齐歌曲详情（有的平台一首一首地问），几百首要一会儿
+const TIMEOUTS = { search: 35_000, songlistSearch: 35_000, accountLists: 65_000, accountListMusics: 185_000, songlistDetail: 35_000, songlistAll: 185_000, songlistCollect: 185_000, play: 65_000, lyric: 35_000, pic: 25_000, status: 4_000 };
 const EVENTS_RETRY_MS = 3_000;
 
 /** 洛雪的码换成 Folia 共用的码 */

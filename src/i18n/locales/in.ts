@@ -703,6 +703,8 @@ export default {
     "songUnavailableTag": "Tidak Tersedia",
     "songVideoTag": "MV",
     "queueShuffled": "Antrean diacak",
+    "leadingShuffleOn": "Putar acak di pemutar aktif",
+    "leadingShuffleOff": "Putar acak di pemutar nonaktif",
     "leadingPlayerOwnsQueue": "Antrean ini mengikuti pemutar eksternal yang sedang memutar: ubah urutan atau hapus lagu di sana",
     "leadingPlayerCannotQueue": "Lagu-lagu ini tidak bisa masuk ke antrean pemutar eksternal",
     "leadingPlayerQueueFailed": "Lagu tidak dapat ditambahkan ke antrean pemutar eksternal",

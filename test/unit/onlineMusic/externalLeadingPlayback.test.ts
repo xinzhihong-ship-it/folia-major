@@ -20,6 +20,7 @@ const omniMock = vi.hoisted(() => ({
     setExternalPlaybackRepeatOne: vi.fn<(song: unknown, enabled: boolean) => Promise<void>>(async () => {}),
     setExternalPlaybackLoopMode: vi.fn<(song: unknown, mode: 'off' | 'all' | 'one') => Promise<void>>(async () => {}),
     setExternalPlaybackQuality: vi.fn<(song: unknown, quality: string) => Promise<void>>(async () => {}),
+    setExternalPlaybackShuffle: vi.fn<(song: unknown, on: boolean) => Promise<void>>(async () => {}),
     skipExternalPlayback: vi.fn<(song: unknown, direction: 'next' | 'prev') => Promise<void>>(async () => {}),
     getExternalPlaybackStatus: vi.fn<(song: unknown) => Promise<ProviderExternalPlaybackStatus>>(async () => ({
         mediaId: 'kw_1', isPlaying: true, positionMs: 10000, durationMs: 200000, ended: false,
@@ -177,6 +178,41 @@ describe('external route with a leading player', () => {
         engine.setLeadingPlayerQuality('standard');
         await flush();
         expect(omniMock.setExternalPlaybackQuality).toHaveBeenCalledTimes(1);
+    });
+
+    it('turns the player shuffle play mode the other way, standing over an answer that has not heard of it yet', async () => {
+        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ shuffle: false }));
+        await start();
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(engine.getLeadingPlayerShuffle()).toBe(false);
+        expect(engine.toggleLeadingPlayerShuffle()).toBe(true);
+        expect(engine.getLeadingPlayerShuffle()).toBe(true);
+        expect(omniMock.setExternalPlaybackShuffle).toHaveBeenCalledWith(song, true);
+        // The player still says off for a moment: the listener's press stands
+        await vi.advanceTimersByTimeAsync(600);
+        expect(engine.getLeadingPlayerShuffle()).toBe(true);
+        // Later it is the player's word
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(engine.getLeadingPlayerShuffle()).toBe(false);
+    });
+
+    it('keeps the player shuffle play mode across a track change, before the player answers for the new track', async () => {
+        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ shuffle: true }));
+        await start();
+        // Past the hold a press in an earlier test leaves behind (each test's fake clock starts over)
+        await vi.advanceTimersByTimeAsync(6000);
+        expect(engine.getLeadingPlayerShuffle()).toBe(true);
+        const next: SongResult = { ...song, id: 'kw_2', sourceRef: { kind: 'online', providerId: 'lxmusic', mediaId: 'kw_2' } };
+        await engine.beginExternalPlayback(next, 0, { queue: [song, next] });
+        expect(engine.getLeadingPlayerShuffle()).toBe(true);
+    });
+
+    it('leaves the shuffle button to the app for a player without a shuffle play mode', async () => {
+        await start();
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(engine.getLeadingPlayerShuffle()).toBeNull();
+        expect(engine.toggleLeadingPlayerShuffle()).toBe(false);
+        expect(omniMock.setExternalPlaybackShuffle).not.toHaveBeenCalled();
     });
 
     it('does not move the app queue at the end of a track', async () => {

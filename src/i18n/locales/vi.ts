@@ -703,6 +703,8 @@ export default {
     "songUnavailableTag": "Không khả dụng",
     "songVideoTag": "MV",
     "queueShuffled": "Đã xáo trộn hàng đợi",
+    "leadingShuffleOn": "Đã bật phát ngẫu nhiên trong trình phát",
+    "leadingShuffleOff": "Đã tắt phát ngẫu nhiên trong trình phát",
     "leadingPlayerOwnsQueue": "Hàng đợi này đi theo trình phát bên ngoài đang phát: hãy sắp xếp lại hoặc xóa bài hát ở đó",
     "leadingPlayerCannotQueue": "Không thể đưa các bài hát này vào hàng đợi của trình phát bên ngoài",
     "leadingPlayerQueueFailed": "Không thể thêm bài hát vào hàng đợi của trình phát bên ngoài",

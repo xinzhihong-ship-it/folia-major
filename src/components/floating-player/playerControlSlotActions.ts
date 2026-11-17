@@ -24,6 +24,8 @@ export type PlayerControlSlotContext = {
     canNext: boolean;
     onShuffle: () => void;
     canShuffle: boolean;
+    /** 主导播放的外部播放器自己的随机播放开着：随机按钮亮起，按它是开关随机播放（useLeadingPlayerShuffle）。 */
+    shuffleActive?: boolean;
     onLike: () => void;
     isLiked: boolean;
     likeDisabled: boolean;
@@ -136,7 +138,7 @@ export const resolvePlayerControlSlot = (
             return {
                 icon: Shuffle,
                 filled: false,
-                active: false,
+                active: context.shuffleActive === true,
                 disabled: !context.canShuffle,
                 onActivate: context.onShuffle,
                 labelKey: 'options.playerControlSlotAction_shuffle',

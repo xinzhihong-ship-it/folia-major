@@ -57,7 +57,7 @@ const QUALITY_LABELS: Record<string, string> = {
     atmos: 'Atmos', atmos_plus: 'Atmos+', master: 'Master', ape: 'APE', wav: 'WAV',
 };
 
-/** 洛雪五种播放模式换成 Folia 的三种：随机算列表循环（下一首照样由洛雪定）。 */
+/** 洛雪五种播放模式换成 Folia 的三种：随机算列表循环（下一首照样由洛雪定；随机另由 shuffle 说）。 */
 export const lxLoopModeOf = (playMode: string): 'off' | 'all' | 'one' => {
     if (playMode === 'singleLoop') return 'one';
     if (playMode === 'list' || playMode === 'none') return 'off';
@@ -97,7 +97,7 @@ export const lxExternalStatusOf = (raw: unknown): ProviderExternalPlaybackStatus
         // 洛雪没说的不替它说：主导模式会把音量、静音、播放模式写进 Folia 的设置
         ...(typeof state.volume === 'number' && Number.isFinite(state.volume) ? { volume: Math.min(1, Math.max(0, state.volume)) } : {}),
         ...(typeof state.mute === 'boolean' ? { muted: state.mute } : {}),
-        ...(typeof state.playMode === 'string' && state.playMode ? { loopMode: lxLoopModeOf(state.playMode) } : {}),
+        ...(typeof state.playMode === 'string' && state.playMode ? { loopMode: lxLoopModeOf(state.playMode), shuffle: state.playMode === 'random' } : {}),
         ...(typeof state.queueRev === 'number' ? { queueRevision: String(state.queueRev) } : {}),
         ...(lxQualityOf(state.quality) ? { quality: lxQualityOf(state.quality) } : {}),
         ...(lxQualityLabelOf(state.quality) ? { qualityLabel: lxQualityLabelOf(state.quality) } : {}),
@@ -144,12 +144,14 @@ export async function lxStartTargetOf(
         : origin.listId
             ? { target: 'list', listId: origin.listId, musicId: id }
             : null;
-    if (!fromList) return { target: 'search', musicInfo: info };
+    if (!fromList && !origin.account) return { target: 'search', musicInfo: info };
     // 队列里洛雪的歌（不算稍后播放的）
     const own = (queue ?? []).filter(item => !lxSongOriginOf(item).later).flatMap(item => {
         try { return [lxMusicInfoOf(item)]; } catch { return []; }
     });
     const index = own.findIndex(item => item.id === id);
+    // 平台账号歌单里的歌：洛雪里没有这张列表，照它「平台音乐」页面的做法，把这份队列放进临时列表照顺序放
+    if (!fromList) return index < 0 ? { target: 'search', musicInfo: info } : queueTargetOf(own, index, id);
     if (index < 0) return fromList;
     let order: string[];
     try {
@@ -159,9 +161,14 @@ export async function lxStartTargetOf(
         return fromList;
     }
     if (own.length <= order.length && own.every((item, at) => item.id === order[at])) return fromList;
+    return queueTargetOf(own, index, id);
+}
+
+/** 把队列交给洛雪的临时列表，从第 index 首起放；太长时取包含它的一段。 */
+const queueTargetOf = (own: LxMusicInfo[], index: number, id: string): LxStartTarget => {
     const start = Math.max(0, Math.min(index, own.length - LX_QUEUE_LIMIT));
     return { target: 'queue', musicInfos: own.slice(start, start + LX_QUEUE_LIMIT), musicId: id };
-}
+};
 
 /** 等一个读取最多这么久：读完了回它的结果，没读完或读失败回 null（读到的封面照样留着）。 */
 const within = <T>(work: Promise<T>, ms: number): Promise<T | null> => new Promise(resolve => {
@@ -262,6 +269,8 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
             if (lastState?.mute !== muted) await control('mute', muted);
         },
         async setLoopMode(mode) { await control('playMode', LOOP_TO_LX[mode]); },
+        // 洛雪的「列表随机播放」；关掉回列表循环（随机时 Folia 显示的就是列表循环）
+        async setShuffle(on) { await control('playMode', on ? 'random' : 'listLoop'); },
         async setQuality(quality) { await control('quality', QUALITY_TO_LX[quality]); },
         async skip(direction) { await control(direction); },
         // 洛雪的「稍后播放」：下一首播放排在最前，加入队列排在最后

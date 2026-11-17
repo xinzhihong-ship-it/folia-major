@@ -1199,6 +1199,14 @@ export const omni = {
         await runRequest(provider, 'audio', () => setLoopMode(mode));
     },
 
+    // A player without a shuffle play mode of its own is left alone.
+    async setExternalPlaybackShuffle(song: SongResult, on: boolean): Promise<void> {
+        const provider = providerForSong(song);
+        const setShuffle = provider.externalPlayback?.setShuffle?.bind(provider.externalPlayback);
+        if (!setShuffle) return;
+        await runRequest(provider, 'audio', () => setShuffle(on));
+    },
+
     // A player without a quality setting of its own is left alone.
     async setExternalPlaybackQuality(song: SongResult, quality: AudioQualityPreference): Promise<void> {
         const provider = providerForSong(song);

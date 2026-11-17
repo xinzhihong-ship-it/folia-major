@@ -514,6 +514,11 @@ export interface ProviderExternalPlaybackStatus {
     volume?: number;
     muted?: boolean;
     loopMode?: 'off' | 'all' | 'one';
+    /**
+     * A leading player that has a shuffle play mode of its own (`setShuffle`) says whether it is on: it
+     * then picks its next track at random from its queue. Left out by a player without one.
+     */
+    shuffle?: boolean;
     queueRevision?: string;
     /** The quality the player sounds the track at, in its own words (e.g. "FLAC"). */
     qualityLabel?: string;
@@ -574,6 +579,12 @@ export interface OnlineExternalPlaybackProvider {
     getQueue?(): Promise<SongResult[]>;
     /** A leading player's play mode, in the app's three. */
     setLoopMode?(mode: 'off' | 'all' | 'one'): Promise<void>;
+    /**
+     * Turns a leading player's own shuffle play mode on or off (`status.shuffle` says which it is). While
+     * the player leads, the app's shuffle button turns this on and off instead of reordering the queue,
+     * which mirrors the player's and is not the app's to reorder.
+     */
+    setShuffle?(on: boolean): Promise<void>;
     /** A leading player's quality setting; the track it plays changes to it where it can. */
     setQuality?(quality: AudioQualityPreference): Promise<void>;
     /**

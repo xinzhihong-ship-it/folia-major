@@ -703,6 +703,8 @@ export default {
     "songUnavailableTag": "已下架",
     "songVideoTag": "MV",
     "queueShuffled": "播放队列已打乱",
+    "leadingShuffleOn": "播放器已开启随机播放",
+    "leadingShuffleOff": "播放器已关闭随机播放",
     "leadingPlayerOwnsQueue": "这份队列跟着正在播放的外部播放器，请在播放器里调整顺序或删除歌曲",
     "leadingPlayerCannotQueue": "这些歌放不进外部播放器的队列",
     "leadingPlayerQueueFailed": "没能加进外部播放器的队列",

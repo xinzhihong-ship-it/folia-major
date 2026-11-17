@@ -108,6 +108,8 @@ type ExternalSession = {
     playerQuality: AudioQualityPreference | null;
     /** The level last sent to a leading player that it has not yet said back. */
     requestedQuality: AudioQualityPreference | null;
+    /** Whether a leading player's own shuffle play mode is on, as it last said; null for a player without one. */
+    playerShuffle: boolean | null;
 };
 
 export const externalMediaShim = new MediaShim('external:');
@@ -150,6 +152,8 @@ let seenQueueRevision: string | null = null;
 /** When the listener last changed the volume / the loop mode here (performance.now). */
 let localVolumeChangeAt = 0;
 let localLoopChangeAt = 0;
+/** When the listener last turned a leading player's shuffle on or off here (performance.now). */
+let localShuffleChangeAt = 0;
 /** Set while a leading player's own state is written into the app's settings: no echo back. */
 let adoptingPlayerState = false;
 const listeners = new Set<(event: ExternalPlaybackEvent) => void>();
@@ -383,6 +387,39 @@ export const setLeadingPlayerQuality = (quality: AudioQualityPreference): void =
 };
 
 /**
+ * Whether the leading player now playing shuffles by its own play mode; null when no player leads or
+ * it has no shuffle play mode (it has not said, `ProviderExternalPlaybackStatus.shuffle`).
+ */
+export const getLeadingPlayerShuffle = (): boolean | null => {
+    const current = session;
+    if (!current?.leads || current.handedOver || !isExternalRoute()) return null;
+    return current.playerShuffle;
+};
+
+/**
+ * The listener pressed shuffle while a leading player that shuffles by itself plays: its shuffle play
+ * mode is turned the other way. False (nothing done) when no such player leads.
+ */
+export const toggleLeadingPlayerShuffle = (): boolean => {
+    const current = session;
+    const on = getLeadingPlayerShuffle();
+    if (!current || on === null) return false;
+    const wanted = !on;
+    current.playerShuffle = wanted;
+    localShuffleChangeAt = performance.now();
+    emit({ type: 'status' });
+    void omni.setExternalPlaybackShuffle(current.song, wanted).then(() => {
+        console.info('[ExternalPlayback] the leading player shuffle was set', { on: wanted });
+    }, (error: unknown) => {
+        // Back to what the player has: its next answer says so anyway.
+        localShuffleChangeAt = 0;
+        console.warn('[ExternalPlayback] the leading player shuffle could not be set', error);
+        emit({ type: 'failure', error });
+    });
+    return true;
+};
+
+/**
  * A leading player's own volume, mute and play mode become the app's, and a new revision of its
  * queue is announced. What the listener changed here a moment ago stands over an answer that may
  * not have heard of it yet.
@@ -409,6 +446,9 @@ const adoptLeadingPlayerState = (current: ExternalSession, status: ProviderExter
         if (status.quality) {
             current.playerQuality = status.quality;
             if (current.requestedQuality === status.quality) current.requestedQuality = null;
+        }
+        if (typeof status.shuffle === 'boolean' && now - localShuffleChangeAt > LOCAL_CHANGE_HOLD_MS) {
+            current.playerShuffle = status.shuffle;
         }
     } finally {
         adoptingPlayerState = false;
@@ -701,6 +741,15 @@ export function previewExternalPlaybackVolume(volume: number): void {
 const playsInSamePlayer = (a: SongResult, b: SongResult) => getOnlineProviderIdForSong(a) === getOnlineProviderIdForSong(b);
 
 /**
+ * A leading player's shuffle play mode belongs to the player, not the track: the session of its next
+ * track starts with what the last one knew, so the shuffle button does not go dark at every track
+ * change until the player's next answer is taken in.
+ */
+const carriedPlayerShuffle = (song: SongResult): boolean | null => (
+    session?.leads && playsInSamePlayer(session.song, song) ? session.playerShuffle : null
+);
+
+/**
  * Starts a track in the external player and puts the app on that route. `context.queue` is the queue
  * the song is played from, for a player that keeps a queue of its own.
  */
@@ -721,10 +770,11 @@ export async function beginExternalPlayback(song: SongResult, startSec = 0, cont
     clock.setDuration(durationSec);
     clock.sync({ positionSec: Math.max(0, startSec), paused: true });
     const leads = omni.leadsExternalPlayback(song);
+    const playerShuffle = leads ? carriedPlayerShuffle(song) : null;
     session = {
         song, songKey, attempt, clock, durationSec,
         announced: false, playing: false, starting: false, sampledPosition: Math.max(0, startSec), prefetchReady: false, live: false, ended: false, foreign: false, handedOver: false, preparedQueueKey: '', positionRevision: 0, seekPending: false, seeking: false,
-        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null, playerQuality: null, requestedQuality: null,
+        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null, playerQuality: null, requestedQuality: null, playerShuffle,
     };
     failureNoted = false;
     externalMediaShim.beginTrack(songKey);
@@ -808,10 +858,11 @@ export async function adoptExternalPlayback(song: SongResult): Promise<boolean> 
     clock.setDuration(durationSec);
     clock.sync({ positionSec: 0, paused: true });
     const leads = omni.leadsExternalPlayback(song);
+    const playerShuffle = leads ? carriedPlayerShuffle(song) : null;
     session = {
         song, songKey, attempt, clock, durationSec,
         announced: false, playing: false, starting: false, sampledPosition: null, prefetchReady: false, live: false, ended: false, foreign: false, handedOver: false, preparedQueueKey: '', positionRevision: 0, seekPending: false, seeking: false,
-        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null, playerQuality: null, requestedQuality: null,
+        leads, rate: 1, followingMediaId: null, followingStatus: null, followingAt: 0, qualityLabel: null, playerQuality: null, requestedQuality: null, playerShuffle,
     };
     failureNoted = false;
     externalMediaShim.beginTrack(songKey);

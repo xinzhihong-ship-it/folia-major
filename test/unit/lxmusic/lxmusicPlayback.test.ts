@@ -31,8 +31,9 @@ describe('LX Music status', () => {
     it('becomes what the external route reads', () => {
         expect(lxExternalStatusOf(state())).toEqual({
             mediaId: 'kw_1', isPlaying: true, positionMs: 1000, durationMs: 180000, ended: false,
-            rate: 1, volume: 0.5, muted: false, loopMode: 'all', queueRevision: '3', quality: 'lossless', qualityLabel: 'FLAC',
+            rate: 1, volume: 0.5, muted: false, loopMode: 'all', shuffle: false, queueRevision: '3', quality: 'lossless', qualityLabel: 'FLAC',
         });
+        expect(lxExternalStatusOf(state({ playMode: 'random' }))).toMatchObject({ loopMode: 'all', shuffle: true });
     });
 
     it('leaves out what LX Music did not say, so nothing of the app is set from a guess', () => {
@@ -128,6 +129,18 @@ describe('LX Music playback', () => {
         ]);
     });
 
+    it('plays a song of a platform account playlist by handing LX Music the queue, as its platform music page does', async () => {
+        const player = createLxmusicExternalPlayback();
+        const fromAccount = (id: string) => normalizeLxmusicSong(info(id), { account: true });
+        await player.play(fromAccount('kw_2'), 0, { queue: [fromAccount('kw_1'), fromAccount('kw_2')] });
+        await player.play(fromAccount('kw_5'), 0);
+        expect(playOps()).toEqual([
+            { target: 'queue', musicInfos: [info('kw_1'), info('kw_2')], musicId: 'kw_2' },
+            { target: 'search', musicInfo: info('kw_5') },
+        ]);
+        expect(requests.calls.some(call => call.operation === 'listMusics')).toBe(false);
+    });
+
     it('plays a play-later song from the play-later list, without changing the playing list', async () => {
         const player = createLxmusicExternalPlayback();
         await player.play(normalizeLxmusicSong(info('kw_1'), { later: true }), 0);
@@ -184,6 +197,8 @@ describe('LX Music playback', () => {
     it('sends the loop mode, quality, mute apart, next and play-later in LX Music terms', async () => {
         const player = createLxmusicExternalPlayback();
         await player.setLoopMode!('off');
+        await player.setShuffle!(true);
+        await player.setShuffle!(false);
         await player.setQuality!('lossless');
         await player.getStatus(normalizeLxmusicSong(info('kw_9')));
         await player.setVolume!(0.4, true);
@@ -192,6 +207,8 @@ describe('LX Music playback', () => {
         await player.queueInPlayer!([normalizeLxmusicSong(info('kw_6')), normalizeLxmusicSong(info('kw_7'))], 'end');
         expect(playOps()).toEqual([
             { action: 'playMode', value: 'list' },
+            { action: 'playMode', value: 'random' },
+            { action: 'playMode', value: 'listLoop' },
             { action: 'quality', value: 'flac' },
             { action: 'volume', value: 0.4 },
             { action: 'mute', value: true },

@@ -703,6 +703,8 @@ export default {
     "songUnavailableTag": "Unavailable",
     "songVideoTag": "MV",
     "queueShuffled": "Queue shuffled",
+    "leadingShuffleOn": "Shuffle play on in the player",
+    "leadingShuffleOff": "Shuffle play off in the player",
     "leadingPlayerOwnsQueue": "This queue follows the external player that is playing: reorder or remove songs there",
     "leadingPlayerCannotQueue": "These songs cannot go into the external player queue",
     "leadingPlayerQueueFailed": "The songs could not be added to the external player queue",

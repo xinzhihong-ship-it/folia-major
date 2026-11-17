@@ -9,7 +9,9 @@ import { askPlayedSong, isSongUnavailable } from '../../../../services/onlineMus
 import { getSongResourceCacheKey } from '../../../../services/onlineMusic/resourceKeys';
 import { getPersonalFmSelection, getStationRequestOptions } from '../../../../stores/usePersonalFmModeStore';
 import { omni } from '../../../../services/onlineMusic/omni';
-import { announceExternalPlayback, beginExternalPlayback, isExternalRoute, stepLeadingExternalPlayer, yieldExternalPlayback } from '../../../../services/onlineMusic/externalPlayback';
+import {
+    announceExternalPlayback, beginExternalPlayback, getLeadingPlayerShuffle, isExternalRoute, stepLeadingExternalPlayer, toggleLeadingPlayerShuffle, yieldExternalPlayback,
+} from '../../../../services/onlineMusic/externalPlayback';
 import { getCachedSongCoverUrl, hasCachedSongAudio } from '../../../../services/onlineMusic/resourceCache';
 import { queueInLeadingPlayer, refuseLeadingQueueEdit, songsForLeadingPlayer } from '../leadingPlayerQueue';
 import { isListenerNextStep } from './nextTrackStep';
@@ -1873,6 +1875,11 @@ export function usePlaybackQueueController({
     }, [handleStagePlayerQueueRequest]);
 
     const shuffleQueue = useCallback(() => {
+        // 主导播放的外部播放器有自己的随机播放：按钮开关它的随机播放。队列跟着那个播放器，不在这里打乱
+        if (toggleLeadingPlayerShuffle()) {
+            setStatusMsg({ type: 'info', text: t(getLeadingPlayerShuffle() ? 'status.leadingShuffleOn' : 'status.leadingShuffleOff'), nonce: Date.now() });
+            return;
+        }
         if (refuseLeadingQueueEdit(t)) return;
         if (!playQueue || !canShuffleQueue(playQueue.length, isFmMode, isNowPlayingStageActive)) return;
 

@@ -7,6 +7,7 @@ import type { PlayerControlSlotContext } from '../../floating-player/playerContr
 import { canDislikeCurrentSong, resolveLikeAvailability } from '../../../utils/playerLikeAvailability';
 import { canShuffleQueue, resolvePlaybackNeighbors } from '../../../utils/playbackNeighbors';
 import { resolveLyricSeekMediaTime } from '../../../utils/lyrics/lyricSeekTime';
+import { useLeadingPlayerShuffle } from '../playback/useLeadingPlayerShuffle';
 
 // src/components/app/lattice/LatticePlaybackProvider.tsx
 // Reuses the main bar's playback actions and keeps its timeline outside transformed cards.
@@ -51,6 +52,7 @@ type Props = {
 
 export default function LatticePlaybackProvider({ actions, currentSong, queue, lyrics, currentTime, lyricCurrentTime, duration, onSeek, isDaylight, children }: Props) {
     const [timelineOpen, setTimelineOpen] = useState(false);
+    const leadingShuffle = useLeadingPlayerShuffle();
     // The timeline highlights and seeks on the lyric clock; a click is turned back into media time
     // here (see resolveLyricSeekMediaTime for a line outside a preview clip).
     const seekLyricTime = (lyricTimeSec: number) => {
@@ -70,7 +72,8 @@ export default function LatticePlaybackProvider({ actions, currentSong, queue, l
             canPrev: neighbors.prev.canGo && !actions.disabled,
             canNext: neighbors.next.canGo && !actions.disabled,
             onShuffle: actions.playback.shuffleQueue,
-            canShuffle: canShuffleQueue(queue.length, actions.playback.isFmMode, Boolean(actions.isStageActive)),
+            canShuffle: leadingShuffle !== null || canShuffleQueue(queue.length, actions.playback.isFmMode, Boolean(actions.isStageActive)),
+            shuffleActive: leadingShuffle === true,
             onLike: () => { void actions.playback.toggleSongLike(); },
             isLiked: actions.playback.isSongLiked,
             likeDisabled: resolveLikeAvailability(currentSong, Boolean(actions.disabled), Boolean(actions.isStageActive)).disabled,
@@ -82,7 +85,7 @@ export default function LatticePlaybackProvider({ actions, currentSong, queue, l
             onDislike: actions.fmDislike,
             canDislike: actions.playback.isFmMode && !actions.disabled && !actions.isStageActive && canDislikeCurrentSong(currentSong),
         };
-    }, [actions, currentSong, lyrics, queue]);
+    }, [actions, currentSong, leadingShuffle, lyrics, queue]);
     return <PlaybackContext.Provider value={context}>
         {children}
         {timelineOpen && createPortal(<Suspense fallback={null}>

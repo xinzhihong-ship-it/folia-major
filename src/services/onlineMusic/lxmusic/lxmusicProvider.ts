@@ -1,4 +1,4 @@
-import type { LoginState, OnlineMusicProvider, ProviderLyricsResult, ProviderUser } from '../../../types/onlineMusic';
+import type { LoginState, OnlineMusicProvider, ProviderCollection, ProviderLyricsResult, ProviderUser } from '../../../types/onlineMusic';
 import { OnlineProviderError } from '../../../types/onlineMusic';
 import { extractAwlrcContainer } from '../../../utils/lyrics/awlrcContainer';
 import { parseLyricsByFormat } from '../../../utils/lyrics/parserCore';
@@ -58,7 +58,12 @@ export const lxmusicProvider: OnlineMusicProvider = {
         mutations: true, likes: true, playlistTrackMutations: true, playlistSubscription: true,
     },
     normalizeSong: raw => normalizeLxmusicSong(raw),
-    normalizeCollection: raw => normalizeLxmusicList(raw as Parameters<typeof normalizeLxmusicList>[0]),
+    // 存档里恢复的已经是这个平台的集合（我的列表、分享歌单、平台账号歌单）：原样用，不再当成我的列表换一遍（那样会丢掉封面、歌数、红心）
+    normalizeCollection: raw => (
+        (raw as Partial<ProviderCollection> | null)?.providerId === LXMUSIC_PROVIDER_ID
+            ? raw as ProviderCollection
+            : normalizeLxmusicList(raw as Parameters<typeof normalizeLxmusicList>[0])
+    ),
     songMetadata: { getSongMetadata: createProviderSongMetadata },
     search: lxmusicSearch,
     library: lxmusicLibrary,

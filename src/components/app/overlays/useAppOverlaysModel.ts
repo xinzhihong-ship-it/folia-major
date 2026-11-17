@@ -19,6 +19,7 @@ import {
 } from '../../../stores/usePlaybackStore';
 import { resolveLikeAvailability } from '../../../utils/playerLikeAvailability';
 import { canShuffleQueue } from '../../../utils/playbackNeighbors';
+import { useLeadingPlayerShuffle } from '../playback/useLeadingPlayerShuffle';
 import { buildAppOverlaysModel, type AppOverlaysDeps, type AppOverlaysModel } from './buildAppOverlaysModel';
 
 // src/components/app/overlays/useAppOverlaysModel.ts
@@ -59,9 +60,12 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
     const displayCoverUrl = usePlaybackStore(selectDisplayCoverUrl);
     const displayDuration = usePlaybackStore(selectDisplayDuration);
     const displayPlayerState = usePlaybackStore(selectDisplayPlayerState);
+    const leadingShuffle = useLeadingPlayerShuffle();
     const playerControlSlotContext = useMemo(() => ({
         onShuffle: deps.shuffleQueue,
-        canShuffle: canShuffleQueue(playQueue.length, isFmMode, deps.isNowPlayingStageActive),
+        // 主导播放的播放器有自己的随机播放时，按钮开关它，不看队列有几首（只有一首时也关得掉）
+        canShuffle: leadingShuffle !== null || canShuffleQueue(playQueue.length, isFmMode, deps.isNowPlayingStageActive),
+        shuffleActive: leadingShuffle === true,
         onLike: deps.handleLike,
         isLiked: deps.isDisplaySongLiked,
         likeDisabled: resolveLikeAvailability(
@@ -82,6 +86,7 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
         deps.shuffleQueue,
         displaySong,
         isFmMode,
+        leadingShuffle,
         playQueue.length,
     ]);
 

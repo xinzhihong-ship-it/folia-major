@@ -1159,7 +1159,9 @@ export const installExternalPlayback = (): void => {
             localVolumeChangeAt = performance.now();
             setExternalPlaybackVolume();
         }
-        if (state.audioQuality !== previous.audioQuality) syncLeadingQuality();
+        // A player with quality levels of its own keeps its setting when the preference changes (picked
+        // for another provider): it is set only by picking one of its levels.
+        if (state.audioQuality !== previous.audioQuality && !(session && omni.hasExternalPlayerQualityChoices(session.song))) syncLeadingQuality();
     });
     usePlaybackStore.subscribe((state, previous) => {
         if (ownWriteDepth > 0) return;

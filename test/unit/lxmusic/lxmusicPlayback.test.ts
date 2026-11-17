@@ -15,7 +15,7 @@ vi.mock('@/services/onlineMusic/lxmusic/lxmusicTransport', () => ({
     subscribeLxmusicEvents: vi.fn(() => () => {}),
 }));
 
-const { composeLxQueue, createLxmusicExternalPlayback, lxExternalStatusOf, lxLoopModeOf, lxQualityLabelOf, lxQualityOf } = await import('@/services/onlineMusic/lxmusic/lxmusicPlayback');
+const { composeLxQueue, createLxmusicExternalPlayback, lxExternalStatusOf, lxLoopModeOf, lxQualityChoicesOf, lxQualityLabelOf, lxQualityOf } = await import('@/services/onlineMusic/lxmusic/lxmusicPlayback');
 const { normalizeLxmusicSong } = await import('@/services/onlineMusic/lxmusic/lxmusicNormalize');
 
 const info = (id: string) => ({ id, name: id, singer: 'A', source: 'kw', interval: '03:00', meta: { albumName: '', picUrl: 'https://c/' + id } });
@@ -61,6 +61,36 @@ describe('LX Music status', () => {
         expect(lxQualityOf({ wanted: '320k' })).toBe('high');
         expect(lxQualityOf({ wanted: 'master' })).toBe('hires');
         expect(lxQualityOf({ wanted: 'local' })).toBeUndefined();
+    });
+
+    it('reads LX Music own quality levels, and none from an older LX Music that does not give them', () => {
+        expect(lxQualityChoicesOf({ quality: 'master', qualities: [{ id: '128k', name: '128K 普音' }, { id: 'master', name: '臻品母带' }, { id: 7 }] })).toEqual({
+            choices: [{ id: '128k', label: '128K 普音' }, { id: 'master', label: '臻品母带' }], current: 'master',
+        });
+        expect(lxQualityChoicesOf({ quality: 'flac' })).toBeNull();
+        expect(lxQualityChoicesOf(null)).toBeNull();
+    });
+
+    it('lists LX Music quality levels only while the app is connected to it', async () => {
+        const choices = createLxmusicExternalPlayback().qualityChoices!;
+        requests.answers.set('info', { quality: 'flac', qualities: [{ id: 'flac', name: 'FLAC 无损' }] });
+        requests.answers.set('linkStatus', { linked: false, connected: true });
+        expect(await choices.read()).toBeNull();
+        requests.answers.set('linkStatus', { linked: true, connected: true });
+        expect(await choices.read()).toEqual({ choices: [{ id: 'flac', label: 'FLAC 无损' }], current: 'flac' });
+    });
+
+    it('hears each LX Music quality setting, and when LX Music is reached or lost', async () => {
+        const { subscribeLxmusicEvents } = await import('@/services/onlineMusic/lxmusic/lxmusicTransport');
+        let push: (event: unknown) => void = () => {};
+        vi.mocked(subscribeLxmusicEvents).mockImplementationOnce(listener => { push = listener as (event: unknown) => void; return () => {}; });
+        const heard: unknown[] = [];
+        createLxmusicExternalPlayback().qualityChoices!.watch(event => { heard.push(event); });
+        push({ type: 'state', data: state({ quality: { wanted: 'master', current: 'flac', actual: '' } }) });
+        push({ type: 'state', data: state({ quality: { wanted: '', current: '', actual: '' } }) });
+        push({ type: 'lists', data: {} });
+        push({ type: 'connection', data: { connected: false } });
+        expect(heard).toEqual([{ type: 'setting', current: 'master' }, { type: 'reachable', reachable: false }]);
     });
 });
 
@@ -199,6 +229,7 @@ describe('LX Music playback', () => {
         await player.setLoopMode!('off');
         await player.setShuffle!(true);
         await player.setShuffle!(false);
+        await player.qualityChoices!.set('master');
         await player.setQuality!('lossless');
         await player.getStatus(normalizeLxmusicSong(info('kw_9')));
         await player.setVolume!(0.4, true);
@@ -209,6 +240,7 @@ describe('LX Music playback', () => {
             { action: 'playMode', value: 'list' },
             { action: 'playMode', value: 'random' },
             { action: 'playMode', value: 'listLoop' },
+            { action: 'quality', value: 'master' },
             { action: 'quality', value: 'flac' },
             { action: 'volume', value: 0.4 },
             { action: 'mute', value: true },

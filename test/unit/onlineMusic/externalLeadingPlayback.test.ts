@@ -21,6 +21,7 @@ const omniMock = vi.hoisted(() => ({
     setExternalPlaybackLoopMode: vi.fn<(song: unknown, mode: 'off' | 'all' | 'one') => Promise<void>>(async () => {}),
     setExternalPlaybackQuality: vi.fn<(song: unknown, quality: string) => Promise<void>>(async () => {}),
     setExternalPlaybackShuffle: vi.fn<(song: unknown, on: boolean) => Promise<void>>(async () => {}),
+    hasExternalPlayerQualityChoices: vi.fn<(song: unknown) => boolean>(() => false),
     skipExternalPlayback: vi.fn<(song: unknown, direction: 'next' | 'prev') => Promise<void>>(async () => {}),
     getExternalPlaybackStatus: vi.fn<(song: unknown) => Promise<ProviderExternalPlaybackStatus>>(async () => ({
         mediaId: 'kw_1', isPlaying: true, positionMs: 10000, durationMs: 200000, ended: false,
@@ -213,6 +214,17 @@ describe('external route with a leading player', () => {
         expect(engine.getLeadingPlayerShuffle()).toBeNull();
         expect(engine.toggleLeadingPlayerShuffle()).toBe(false);
         expect(omniMock.setExternalPlaybackShuffle).not.toHaveBeenCalled();
+    });
+
+    it('leaves the setting of a player with quality levels of its own when the preference changes for another provider', async () => {
+        omniMock.hasExternalPlayerQualityChoices.mockReturnValue(true);
+        omniMock.getExternalPlaybackStatus.mockResolvedValue(status({ quality: 'lossless' }));
+        await start();
+        await vi.advanceTimersByTimeAsync(600);
+        useAudioSettingsStore.getState().setAudioQuality('hires');
+        await flush();
+        expect(omniMock.setExternalPlaybackQuality).not.toHaveBeenCalled();
+        omniMock.hasExternalPlayerQualityChoices.mockReturnValue(false);
     });
 
     it('does not move the app queue at the end of a track', async () => {

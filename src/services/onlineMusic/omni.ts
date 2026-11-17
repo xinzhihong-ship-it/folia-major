@@ -35,6 +35,8 @@ import type {
     ProviderExternalFollow,
     ProviderExternalPlayContext,
     ProviderExternalPlaybackStatus,
+    ProviderQualityChoiceEvent,
+    ProviderQualityChoices,
     ProviderLoginForm,
     ProviderSearchContext,
     ProviderSearchScope,
@@ -1197,6 +1199,41 @@ export const omni = {
         const setLoopMode = provider.externalPlayback?.setLoopMode?.bind(provider.externalPlayback);
         if (!setLoopMode) return;
         await runRequest(provider, 'audio', () => setLoopMode(mode));
+    },
+
+    // A player's own quality levels and setting (`externalPlayback.qualityChoices`); null for a provider
+    // without them, or a player that has none to give.
+    async readExternalPlayerQualityChoices(providerId: OmniProviderId): Promise<ProviderQualityChoices | null> {
+        const provider = getOnlineMusicProvider(providerId);
+        const choices = provider?.externalPlayback?.qualityChoices;
+        if (!provider || !choices) return null;
+        return await runRequest(provider, 'audio', () => choices.read());
+    },
+
+    // Whether the player of `song` keeps quality levels of its own: the app's preference is then not
+    // carried over to it (its setting is changed only by picking one of its levels).
+    hasExternalPlayerQualityChoices(song: SongResult): boolean {
+        return Boolean(providerForSong(song).externalPlayback?.qualityChoices);
+    },
+
+    // Each change of a player's own quality setting, and whether it can be reached; a provider without
+    // one is never heard from.
+    watchExternalPlayerQualityChoice(providerId: OmniProviderId, listen: (event: ProviderQualityChoiceEvent) => void): () => void {
+        const choices = getOnlineMusicProvider(providerId)?.externalPlayback?.qualityChoices;
+        if (!choices) return () => {};
+        try {
+            return choices.watch(listen);
+        } catch (error) {
+            console.warn('[Omni] a player quality setting could not be watched', { providerId }, error);
+            return () => {};
+        }
+    },
+
+    async setExternalPlayerQualityChoice(providerId: OmniProviderId, choice: string): Promise<void> {
+        const provider = getOnlineMusicProvider(providerId);
+        const choices = provider?.externalPlayback?.qualityChoices;
+        if (!provider || !choices) return;
+        await runRequest(provider, 'audio', () => choices.set(choice));
     },
 
     // A player without a shuffle play mode of its own is left alone.

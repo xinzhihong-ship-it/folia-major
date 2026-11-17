@@ -125,10 +125,32 @@ const musicInfosOf = (tracks: Array<MediaId | SongResult>) => tracks.map(track =
 /** 一段文字里有没有链接（贴进搜索框时试着打开那张歌单；是哪个平台的、认不认得，洛雪说了算）。 */
 export const looksLikeShareLink = (query: string) => /https?:\/\/\S+/i.test(query);
 
+let sourceNames: Promise<Map<string, string>> | null = null;
+
+/** 洛雪各平台的名字（info 接口，用洛雪自己的叫法），给歌单标上是哪个平台的；读不到时不标，下次再读。 */
+const readLxSourceNames = (): Promise<Map<string, string>> => {
+    sourceNames ??= requestLxmusic<{ sources?: Array<{ id?: unknown; name?: unknown }> } | null>('info').then(info => {
+        const names = new Map((info?.sources ?? []).flatMap(item => (
+            typeof item.id === 'string' && typeof item.name === 'string' ? [[item.id, item.name] as const] : []
+        )));
+        // 一个名字也没读到不留着，下次再读
+        if (!names.size) sourceNames = null;
+        return names;
+    }, (error: unknown) => {
+        sourceNames = null;
+        console.warn('[LxMusic] the platform names could not be read', error);
+        return new Map<string, string>();
+    });
+    return sourceNames;
+};
+
 /** 打开一张分享歌单：读第一页的信息，回它的集合。认不出平台时要给 source。 */
 export async function openLxShareList(text: string, source?: string): Promise<ProviderCollection> {
-    const detail = await requestLxmusic<LxSongListDetail>('songlistDetail', { text, ...(source ? { source } : {}), page: 1 });
-    return normalizeLxShareList(detail.source, detail.id, detail.info, detail.total);
+    const [detail, names] = await Promise.all([
+        requestLxmusic<LxSongListDetail>('songlistDetail', { text, ...(source ? { source } : {}), page: 1 }),
+        readLxSourceNames(),
+    ]);
+    return normalizeLxShareList(detail.source, detail.id, detail.info, detail.total, names.get(detail.source));
 }
 
 const isLxSongListItem = (value: unknown): value is LxSongListItem => {
@@ -172,8 +194,12 @@ export const lxmusicSearch: OnlineSearchProvider = {
         }
         if (!text) return { items: [], total: 0, nextOffset: offset, hasMore: false };
         const page = Math.floor(Math.max(0, offset) / LX_SONGLIST_SEARCH_PAGE_SIZE) + 1;
-        const answer = await requestLxmusic<LxSearchAnswer | null>('songlistSearch', { text, source: 'all', page });
-        const items = (answer?.list ?? []).filter(isLxSongListItem).map(item => normalizeLxShareList(item.source, item.id, item, item.total));
+        const [answer, names] = await Promise.all([
+            requestLxmusic<LxSearchAnswer | null>('songlistSearch', { text, source: 'all', page }),
+            readLxSourceNames(),
+        ]);
+        const items = (answer?.list ?? []).filter(isLxSongListItem)
+            .map(item => normalizeLxShareList(item.source, item.id, item, item.total, names.get(item.source)));
         return {
             items,
             ...(answer?.total ? { total: answer.total } : {}),

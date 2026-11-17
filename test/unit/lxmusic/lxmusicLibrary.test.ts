@@ -25,6 +25,9 @@ beforeEach(() => {
     forgetKeptLxLists();
 });
 
+// 平台的名字读一次就留着（洛雪的平台不会变）：几条用例给同一份
+const platformInfo = { sources: [{ id: 'kg', name: '平台乙', search: true, songList: true }, { id: 'wy', name: '平台丙', search: true, songList: true }] };
+
 describe('LX Music search', () => {
     it('searches the picked platform, or all of them', async () => {
         requests.answers.set('search', { list: [info('kw_1')], page: 1, maxPage: 2, total: 40 });
@@ -47,27 +50,30 @@ describe('LX Music search', () => {
         expect(await lxmusicSearch.getScopes?.()).toEqual([{ id: 'kw', name: '酷我音乐' }]);
     });
 
-    it('opens a pasted share link as a song list', async () => {
-        requests.answers.set('songlistDetail', { source: 'wy', id: '123', info: { name: '歌单' }, list: [], page: 1, limit: 30, total: 12 });
+    it('opens a pasted share link as a song list, named with its platform', async () => {
+        requests.answers.set('info', platformInfo);
+        requests.answers.set('songlistDetail', { source: 'wy', id: '123', info: { name: '歌单', author: '作者' }, list: [], page: 1, limit: 30, total: 12 });
         const pasted = await lxmusicSearch.searchPlaylists?.('https://music.163.com/playlist?id=123', 30, 0);
-        expect(pasted?.items.map(item => [item.id, item.name])).toEqual([['share:wy:123', '歌单']]);
-        expect(requests.calls.map(call => call.operation)).toEqual(['songlistDetail']);
+        expect(pasted?.items.map(item => [item.id, item.name, item.creator?.nickname])).toEqual([['share:wy:123', '歌单', '平台丙 · 作者']]);
+        expect(requests.calls.map(call => call.operation)).toContain('songlistDetail');
     });
 
     it('searches the song lists of every platform by words, each opened as a shared list', async () => {
+        requests.answers.set('info', platformInfo);
         requests.answers.set('songlistSearch', { list: [
             { id: 'id_9', source: 'kg', name: '梁博精选', img: 'https://img/9.jpg', author: '某人', total: '42' },
             { id: '', source: 'wy', name: 'bad' },
         ], page: 1, maxPage: 3, total: 300 });
         const first = await lxmusicSearch.searchPlaylists?.(' 梁博 ', 30, 0);
         await lxmusicSearch.searchPlaylists?.('梁博', 30, first?.nextOffset ?? 0);
-        expect(requests.calls.map(call => call.params)).toEqual([
+        expect(requests.calls.filter(call => call.operation === 'songlistSearch').map(call => call.params)).toEqual([
             { text: '梁博', source: 'all', page: 1 },
             { text: '梁博', source: 'all', page: 2 },
         ]);
         expect(first).toMatchObject({ total: 300, hasMore: true });
+        // 创建者一栏写着是哪个平台的
         expect(first?.items).toEqual([expect.objectContaining({
-            id: 'share:kg:id_9', name: '梁博精选', coverUrl: 'https://img/9.jpg', trackCount: 42, creator: { id: '某人', nickname: '某人' },
+            id: 'share:kg:id_9', name: '梁博精选', coverUrl: 'https://img/9.jpg', trackCount: 42, creator: { id: '某人', nickname: '平台乙 · 某人' },
         })]);
     });
 });

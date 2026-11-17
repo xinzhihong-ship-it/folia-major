@@ -107,7 +107,10 @@ Apple Music 的推荐能力已接入个人 FM（Apple personal station 持续补
 
 - 队列、播放模式、音量、静音以播放器为准，读到的写进 Folia 的设置（不回写），Folia 这边改了再发给播放器；
   刚改过的两秒内播放器的旧答复不覆盖。音质是例外：Folia 的音质偏好所有平台共用一个，播放器的音质只显示
-  （`getLeadingPlayerQuality`），不写进偏好；在 Folia 里选了才发给播放器。
+  （`getLeadingPlayerQuality`），不写进偏好；在 Folia 里选了才发给播放器。播放器有比 Folia 更多的音质档时
+  （`externalPlayback.qualityChoices`），连着就在音质选择里列它自己的档、亮它的设置、选了只发给它，不管它在不在放
+  （`services/onlineMusic/playerQualityChoices.ts`）。
+- 播放器有自己的随机播放（`setShuffle`、`status.shuffle`）时，随机按钮开关它的随机，不打乱 Folia 的队列。
 - 起播时 Folia 交来的队列就是那张列表（按播放器的顺序）就从列表放，被打乱、筛过、加过歌时把这份队列交给
   播放器的临时列表（`lxmusic/lxmusicPlayback.ts` 的 `lxStartTargetOf`），起播后照回来的队列和 Folia 显示的一样。
 - 播放器自己换了歌（放完、在它自己的窗口里切歌），路线发 `player-moved`，`useExternalPlaybackBridge` 经

@@ -1,4 +1,4 @@
-import React, { useSyncExternalStore } from 'react';
+import React, { useCallback, useSyncExternalStore } from 'react';
 import { LogOut, RefreshCw, Crown, User as UserIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AudioQualityPreference } from '../../types/onlineMusic';
@@ -7,6 +7,7 @@ import { useLibraryAccountProviders, useLibraryAccountSelector } from '../../lib
 import { canLogoutProvider } from '../../library/core/account/accountRules';
 import { omni } from '../../services/onlineMusic/omni';
 import { getLeadingPlayerQuality, setLeadingPlayerQuality, subscribeExternalPlayback } from '../../services/onlineMusic/externalPlayback';
+import { getPlayerQualityChoices, setPlayerQualityChoice, subscribePlayerQualityChoices } from '../../services/onlineMusic/playerQualityChoices';
 import { providerDisplayName } from '../../i18n/providerName';
 import { openLoginWindow } from '../login/loginWindowStore';
 import { PlatformMark } from '../login/PlatformMark';
@@ -75,6 +76,18 @@ const AccountTab: React.FC<AccountTabProps> = ({
     // this provider's song its setting is lit, and a pick is asked of it as well as stored.
     const playerQuality = useSyncExternalStore(subscribePlayerQuality, () => getLeadingPlayerQuality(activeProviderId), () => null);
     const litQuality = playerQuality ?? omni.resolveAudioQuality(activeProviderId, audioQuality);
+    // A player with quality levels of its own (more than the app's): while it can be reached the picker
+    // lists its levels and its setting, whether or not it plays, and a pick is set there only.
+    const subscribeChoices = useCallback(
+        (notify: () => void) => subscribePlayerQualityChoices(activeProviderId, notify),
+        [activeProviderId],
+    );
+    const playerChoices = useSyncExternalStore(subscribeChoices, () => getPlayerQualityChoices(activeProviderId), () => null);
+    const playerChoiceOptions = playerChoices ? [
+        ...playerChoices.choices.map(choice => ({ value: choice.id, label: choice.label })),
+        // A setting the player no longer offers is still shown as it is
+        ...(playerChoices.choices.some(choice => choice.id === playerChoices.current) ? [] : [{ value: playerChoices.current, label: playerChoices.current }]),
+    ] : [];
 
     const handleLogout = () => accountController.logout(activeProviderId);
     // The sign-in of the platform in use ran out: the account has left, and the row says so.
@@ -131,20 +144,30 @@ const AccountTab: React.FC<AccountTabProps> = ({
 
             {/* Provider-independent audio quality preference; each online provider maps these semantic presets. */}
             <PanelRow label={t('account.audioQuality')}>
-                <Select
-                    name={t('account.audioQuality')}
-                    // The panel sits at the bottom of the window: a list that opens down covers the tab row.
-                    preferAbove
-                    value={litQuality}
-                    options={qualityOptions.map(option => ({ value: option.value, label: t(option.labelKey) }))}
-                    // (The lit level is where the stored preference already stands on this provider: choosing it
-                    // changes nothing here, and must not lower what is stored for the other providers.)
-                    onChange={(quality) => {
-                        if (quality === litQuality) return;
-                        if (playerQuality) setLeadingPlayerQuality(quality);
-                        onAudioQualityChange(quality);
-                    }}
-                />
+                {playerChoices ? (
+                    <Select
+                        name={t('account.audioQuality')}
+                        preferAbove
+                        value={playerChoices.current}
+                        options={playerChoiceOptions}
+                        onChange={(choice) => { setPlayerQualityChoice(activeProviderId, choice); }}
+                    />
+                ) : (
+                    <Select
+                        name={t('account.audioQuality')}
+                        // The panel sits at the bottom of the window: a list that opens down covers the tab row.
+                        preferAbove
+                        value={litQuality}
+                        options={qualityOptions.map(option => ({ value: option.value, label: t(option.labelKey) }))}
+                        // (The lit level is where the stored preference already stands on this provider: choosing it
+                        // changes nothing here, and must not lower what is stored for the other providers.)
+                        onChange={(quality) => {
+                            if (quality === litQuality) return;
+                            if (playerQuality) setLeadingPlayerQuality(quality);
+                            onAudioQualityChange(quality);
+                        }}
+                    />
+                )}
             </PanelRow>
 
             <PlaybackSignalPathButton />

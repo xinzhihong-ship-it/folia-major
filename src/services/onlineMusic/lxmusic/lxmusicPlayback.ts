@@ -1,5 +1,5 @@
 import type { SongResult, UnifiedSong } from '../../../types';
-import type { AudioQualityPreference, OnlineExternalPlaybackProvider, ProviderExternalPlaybackStatus } from '../../../types/onlineMusic';
+import type { AudioQualityPreference, OnlineExternalPlaybackProvider, ProviderExternalPlaybackStatus, ProviderQualityChoices } from '../../../types/onlineMusic';
 import { OnlineProviderError } from '../../../types/onlineMusic';
 import { requestLxmusic, subscribeLxmusicEvents } from './lxmusicTransport';
 import { isLxMusicInfo, LXMUSIC_PROVIDER_ID, lxMusicIdOf, lxMusicInfoOf, lxSongOriginOf, normalizeLxmusicSong, withLxCover, type LxMusicInfo, type LxSongOrigin } from './lxmusicNormalize';
@@ -62,6 +62,16 @@ export const lxLoopModeOf = (playMode: string): 'off' | 'all' | 'one' => {
     if (playMode === 'singleLoop') return 'one';
     if (playMode === 'list' || playMode === 'none') return 'off';
     return 'all';
+};
+
+/** 洛雪 info 接口回的音质档（旧版洛雪没有这一项时回 null，Folia 照用自己的档）。 */
+export const lxQualityChoicesOf = (info: { qualities?: unknown; quality?: unknown } | null | undefined): ProviderQualityChoices | null => {
+    if (!Array.isArray(info?.qualities) || typeof info.quality !== 'string') return null;
+    const choices = info.qualities.flatMap((item: unknown) => {
+        const choice = item as { id?: unknown; name?: unknown } | null;
+        return typeof choice?.id === 'string' && choice.id && typeof choice.name === 'string' ? [{ id: choice.id, label: choice.name }] : [];
+    });
+    return choices.length ? { choices, current: info.quality } : null;
 };
 
 /** 洛雪的音质设置在 Folia 的档位里是哪一档；认不出（本地、下载）时不说。 */
@@ -272,6 +282,29 @@ export function createLxmusicExternalPlayback(): OnlineExternalPlaybackProvider 
         // 洛雪的「列表随机播放」；关掉回列表循环（随机时 Folia 显示的就是列表循环）
         async setShuffle(on) { await control('playMode', on ? 'random' : 'listLoop'); },
         async setQuality(quality) { await control('quality', QUALITY_TO_LX[quality]); },
+        // 洛雪自己的音质档（128K 普音 … 臻品母带，名字用洛雪的）：Folia 的音质选择连着洛雪时列这些档，随时跟洛雪的设置一致
+        qualityChoices: {
+            // 只在 Folia 「连接」着洛雪时列它的档（没连接时请求也到得了洛雪，但不跟着它，也不该改它）
+            async read() {
+                const link = await requestLxmusic<{ linked?: unknown } | null>('linkStatus');
+                if (link?.linked !== true) return null;
+                const info = await requestLxmusic<{ qualities?: unknown; quality?: unknown } | null>('info');
+                return lxQualityChoicesOf(info);
+            },
+            watch(listen) {
+                return subscribeLxmusicEvents(event => {
+                    // 连上、断开洛雪：连上时重读档（洛雪刚启动时第一次读可能没读到）
+                    if (event.type === 'connection') {
+                        listen({ type: 'reachable', reachable: event.data.connected });
+                        return;
+                    }
+                    if (event.type !== 'state') return;
+                    const wanted = (event.data as Partial<LxPlayerState> | null)?.quality?.wanted;
+                    if (typeof wanted === 'string' && wanted) listen({ type: 'setting', current: wanted });
+                });
+            },
+            async set(choice) { await control('quality', choice); },
+        },
         async skip(direction) { await control(direction); },
         // 洛雪的「稍后播放」：下一首播放排在最前，加入队列排在最后
         async queueInPlayer(songs, position) {

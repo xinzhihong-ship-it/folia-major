@@ -193,9 +193,20 @@ export const parseShareCollectionId = (id: unknown): { source: string; text: str
     return { source: rest.slice(0, colon), text: rest.slice(colon + 1) };
 };
 
-/** 分享歌单的信息（洛雪 songlistDetail 的 info）换成集合。 */
-export const normalizeLxShareList = (source: string, text: string, info: { name?: unknown; img?: unknown; desc?: unknown; author?: unknown; play_count?: unknown } | null | undefined, total?: unknown): ProviderCollection => {
+/**
+ * 分享歌单、搜到的歌单的信息（洛雪 songlistDetail 的 info、songlistSearch 的一项）换成集合。
+ * 创建者一栏写上平台（`sourceName`，如「<平台> · 作者」）：搜到的歌单来自各个平台，要看得出是哪家的。
+ */
+export const normalizeLxShareList = (
+    source: string,
+    text: string,
+    info: { name?: unknown; img?: unknown; desc?: unknown; author?: unknown; play_count?: unknown } | null | undefined,
+    total?: unknown,
+    sourceName?: string,
+): ProviderCollection => {
     const count = Number(total);
+    const author = typeof info?.author === 'string' ? info.author : '';
+    const byline = [sourceName, author].filter(Boolean).join(' · ');
     return {
         providerId: LXMUSIC_PROVIDER_ID,
         id: shareCollectionId(source, text),
@@ -203,7 +214,7 @@ export const normalizeLxShareList = (source: string, text: string, info: { name?
         type: 'playlist',
         ...(httpCover(info?.img) ? { coverUrl: httpCover(info?.img) } : {}),
         ...(typeof info?.desc === 'string' && info.desc ? { description: info.desc } : {}),
-        ...(typeof info?.author === 'string' && info.author ? { creator: { id: info.author, nickname: info.author } } : {}),
+        ...(byline ? { creator: { id: author || source, nickname: byline } } : {}),
         ...(Number.isFinite(count) && count >= 0 ? { trackCount: count } : {}),
         isOwned: false,
         providerData: { share: { source, text } },

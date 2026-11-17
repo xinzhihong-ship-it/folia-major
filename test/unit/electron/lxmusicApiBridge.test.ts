@@ -142,6 +142,8 @@ describe('the LX Music bridge', () => {
         expect(events).toContainEqual({ type: 'connection', data: { connected: true } });
         expect(await bridge.request('unlink')).toEqual({ ok: true, data: null });
         expect(store.data.has(LINKED_KEY)).toBe(false);
+        // 断开后说一声没连着（听的人不再列洛雪的音质档）
+        expect(events.at(-1)).toEqual({ type: 'connection', data: { connected: false } });
     });
 
     it('is not linked when LX Music does not answer', async () => {

@@ -281,6 +281,9 @@ function createLxmusicApiBridge({
                     store.delete(LINKED_KEY);
                     stopEvents();
                     info('[LxMusic] unlinked');
+                    // 对 Folia 来说断开了（只跟着「连接」着的洛雪）：之后再答应时重新算连上
+                    lastConnected = null;
+                    onEvent({ type: 'connection', data: { connected: false } });
                     return { ok: true, data: null };
                 }
                 if (operation === 'link') {
@@ -289,6 +292,8 @@ function createLxmusicApiBridge({
                     const connection = await readConnection();
                     store.set(LINKED_KEY, true);
                     info('[LxMusic] linked', { appVersion: connection ? connection.appVersion : null });
+                    // 记下「连接」之后再说连上了：听的人（音质选择）这时去读就能读到
+                    onEvent({ type: 'connection', data: { connected: true } });
                     scheduleEvents(0);
                     return { ok: true, data: { appVersion: connection ? connection.appVersion : null } };
                 }

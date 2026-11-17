@@ -376,6 +376,23 @@ export interface ProviderSearchContext {
     scope?: string;
 }
 
+/** One level of a player's own quality setting, in its own words (`OnlineExternalPlaybackProvider.qualityChoices`). */
+export interface ProviderQualityChoice {
+    id: string;
+    label: string;
+}
+
+/** A player's own quality levels, lowest first, and the one it is set to now. */
+export interface ProviderQualityChoices {
+    choices: ProviderQualityChoice[];
+    current: string;
+}
+
+/** What a player says of its own quality setting (`qualityChoices.watch`): its setting now, or that it can be reached again or no longer. */
+export type ProviderQualityChoiceEvent =
+    | { type: 'setting'; current: string }
+    | { type: 'reachable'; reachable: boolean };
+
 /** A part of a provider a song search can be narrowed to (`OnlineSearchProvider.getScopes`), in its own words. */
 export interface ProviderSearchScope {
     id: string;
@@ -579,6 +596,18 @@ export interface OnlineExternalPlaybackProvider {
     getQueue?(): Promise<SongResult[]>;
     /** A leading player's play mode, in the app's three. */
     setLoopMode?(mode: 'off' | 'all' | 'one'): Promise<void>;
+    /**
+     * A leading player whose quality setting has levels of its own (more than the app's): while it can be
+     * reached, the app's quality picker lists its levels, lights the one it is set to and sets it there,
+     * whether or not it plays anything; the app's own preference is left as it is. `read` answers null
+     * when the player has no such list to give (an older version); `watch` hears each change of its
+     * setting, and when the player can be reached again or no longer.
+     */
+    qualityChoices?: {
+        read(): Promise<ProviderQualityChoices | null>;
+        watch(listen: (event: ProviderQualityChoiceEvent) => void): () => void;
+        set(choice: string): Promise<void>;
+    };
     /**
      * Turns a leading player's own shuffle play mode on or off (`status.shuffle` says which it is). While
      * the player leads, the app's shuffle button turns this on and off instead of reordering the queue,

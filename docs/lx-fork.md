@@ -8,7 +8,9 @@
   - 本仓库 `xinzhihong-ship-it/folia-major` 的 `lx` 分支，是默认分支。手动发版的工作流必须在默认分支上，GitHub 才让手动运行。
   - `main` 分支保持和官方 `chthollyphile/folia-major` 的 `main` 一样，不放我们的改动。
   - `upstream` 远程指向官方仓库。
-- **分出来的位置**：官方提交 `1f73b51`（0.7.28）。最新的共同祖先用 `git merge-base lx upstream/main` 查。
+- **分出来的位置**：官方 `main` 的提交 `1f73b51`（0.7.28 之后、0.7.29 之前）。之后跟进过：
+  - 2026-11-18 合入官方 `v0.7.29`，没有冲突，发 `0.7.29-lx.1`。
+  - 最新的共同祖先用 `git merge-base lx upstream/main` 查。
 - **定位**：
   - 给喜欢 Folia 炫酷歌词的人用。歌由洛雪音乐增强版（`xinzhihong-ship-it/lx-music-desktop-enhanced`）播放，不是 Folia 自己播放。
   - Folia 负责歌词动画、搜歌、浏览列表、控制播放。
@@ -78,15 +80,19 @@ git diff --name-status $(git merge-base lx upstream/main) lx
 
 ### 1. 同步 `main`，看官方改了什么
 
+**合官方的发版标签（如 `v0.7.29`），不合 `upstream/main` 的最新提交。** 官方 `main` 上常有还没发版的改动（测试通道 Limo/Cielo 用），我们的版本号跟官方正式版走，内容也该和它一致。官方正式版看 [官方发布页](https://github.com/chthollyphile/folia-major/releases) 上标成 Latest、名字是「Realeco vX.Y.Z」的那个。
+
 ```bash
-git fetch upstream
+git fetch upstream --tags
 git checkout main
 git merge --ff-only upstream/main
 git push origin main
 
 git checkout lx
-git log --oneline lx..upstream/main          # 官方新提交
-git diff --stat $(git merge-base lx upstream/main) upstream/main   # 官方改了哪些文件
+TAG=v0.7.29                                   # 官方最新正式版
+git log --oneline lx..$TAG                    # 官方新提交
+git diff --stat $(git merge-base lx $TAG) $TAG   # 官方改了哪些文件
+gh release view $TAG --repo chthollyphile/folia-major   # 官方这一版的说明
 ```
 
 重点看几件事：
@@ -101,7 +107,7 @@ git diff --stat $(git merge-base lx upstream/main) upstream/main   # 官方改�
 
 ```bash
 git checkout -b sync/upstream-0.7.29 lx      # 版本号按官方的写
-git merge upstream/main
+git merge $TAG
 ```
 
 解决冲突的原则：先保留官方的改动，再把我们那几行补回去。
@@ -147,6 +153,8 @@ git push origin lx
 ```
 
 然后改 `.github/lx-release-notes.md`：版本号、需要的洛雪版本、这次的变化。开头那段定位说明（只是给喜欢炫酷歌词的人用、歌由洛雪播放）要保留。
+
+写「这次的变化」时，按 `git log --oneline <上一次合入的官方提交>..$TAG` 列，不要照抄官方说明：官方说明是相对官方上一版写的，我们上一次合入的位置可能已经带了其中一部分（0.7.29 就是这样，随机播放、搜索历史等在 0.7.28-lx.3 里已经有了）。
 
 ## 发版
 

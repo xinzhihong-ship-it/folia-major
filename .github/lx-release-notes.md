@@ -2,7 +2,7 @@
 
 > **这个版本只是给喜欢 Folia 炫酷歌词的人用的。** 它在官方 Folia 0.7.29 上加了「洛雪」平台。**歌由洛雪音乐播放，不是 Folia 自己播放**：音源、音质、输出设备（MPV、BlackHole、VST3）都按洛雪的设置走。Folia 在这里负责显示歌词动画，以及搜歌、浏览列表、控制播放。
 >
-> 不用洛雪音乐的话，请用 [官方 Folia](https://github.com/chthollyphile/folia-major/releases)。这个版本的问题请在 [本仓库](https://github.com/xinzhihong-ship-it/folia-major/issues) 反馈，不要找官方。
+> 不用洛雪音乐的话，请用 [官方 Folia](https://github.com/chthollyphile/folia-major/releases)。这是**非官方分支**，与官方 Folia 及其作者无关；这个版本的问题请在 [本仓库](https://github.com/xinzhihong-ship-it/folia-major/issues) 反馈，不要找官方。
 
 需要 [洛雪音乐增强版 3.4.0](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced/releases/tag/v3.4.0) 起。
 
@@ -18,10 +18,10 @@
 
 - **搜歌、搜歌单**：
   - 单曲可以搜全部平台，也可以在搜索页单曲下面的小标签里只搜一个平台。点播放时，歌和在洛雪搜索页双击一样进「试听列表」。
-  - 歌单按关键词各平台一起搜，名字下面写着是哪个平台的（如「酷狗音乐 · 作者」）。
+  - 歌单按关键词各平台一起搜，名字下面写着是哪个平台的（如「某平台 · 作者」）。
 - **洛雪的列表**：
   - 试听列表、我的收藏、自建列表在「歌单」里。红心就是「我的收藏」，「加入歌单」加进洛雪的列表。
-  - 洛雪「平台音乐」里登录的平台账号，它的每日推荐和歌单排在后面，名字前写着平台（如「酷狗音乐 · 我喜欢」）。这些只能看和播放，加歌、删歌到洛雪里做。
+  - 洛雪「平台音乐」里登录的平台账号，它的每日推荐和歌单排在后面，名字前写着平台（如「某平台 · 我喜欢」）。这些只能看和播放，加歌、删歌到洛雪里做。
 - **打开分享的歌单**：在命令面板选「打开分享的歌单」，粘贴链接或写「平台 ID」（如 `wy 123456`），也可以直接把链接贴进搜索框。可以播放全部，也可以收藏到洛雪。
 - **播放控制两边同步**：
   - 播放暂停、拖动、上一首下一首、音量、播放模式都两边同步。
@@ -44,3 +44,14 @@
 - 安装后覆盖官方 Folia，原有设置与登录保留。应用内检查更新看本仓库的发布页，不会被官方版本覆盖回去。
 - 版本号是官方版本加 `-lx.N`（如 0.7.29-lx.1）。模组的 Folia 版本要求按官方版本 0.7.29 判断。
 - 安装包未签名：macOS 打开时若提示已损坏，在终端执行 `xattr -dr com.apple.quarantine /Applications/Folia.app`。
+- Folia 和洛雪音乐增强版自身都不提供任何音频、歌词或封面，请只使用你有权访问的内容。文中提到的平台和软件名称归各自所有者所有。
+
+## English
+
+**Folia LX edition — an unofficial fork, only for people who love Folia's lyric visuals.** It adds an "LX Music" platform to the official Folia. **Music is played by [LX Music Enhanced](https://github.com/xinzhihong-ship-it/lx-music-desktop-enhanced), not by Folia**; Folia shows the lyric animations and lets you search, browse lists and control playback. If you don't use LX Music, use the [official Folia](https://github.com/chthollyphile/folia-major/releases). This fork is not affiliated with the official project; please report problems [here](https://github.com/xinzhihong-ship-it/folia-major/issues).
+
+- Needs LX Music Enhanced 3.4.0 or later, with Settings → Open API → Folia link turned on.
+- Search tracks and playlists, browse your LX Music lists, open shared playlists, and keep play state, volume, play mode, shuffle and quality in sync both ways.
+- Setup: install this edition, pick the "LX Music" platform in Folia and click Connect.
+- This release (0.7.29-lx.1) follows the official Folia 0.7.29. The LX Music side is unchanged from 0.7.28-lx.3, so LX Music needs no update.
+- It installs over the official Folia and keeps your settings. Installers are unsigned; on macOS run `xattr -dr com.apple.quarantine /Applications/Folia.app` if the app is reported as damaged.

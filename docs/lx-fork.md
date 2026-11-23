@@ -58,6 +58,7 @@ git diff --name-status $(git merge-base lx upstream/main) lx
 
 | 文件 | 我们改了什么 |
 |---|---|
+| `README.md`、`README.en.md` | 整个换成本分支自己的说明（中英两份）。合并冲突时保留我们的（`git checkout --ours README.md README.en.md`），再看官方 README 有没有新内容值得在我们的里提一句 |
 | `package.json` | `build.publish.owner` 改成 `xinzhihong-ship-it`。版本号保持官方的，不写 `-lx.N`，由发版工作流打包时填 |
 | `electron/main.cjs` | `FOLIA_RELEASES_URL` 和自动更新的 `owner` 指向本仓库；创建洛雪桥（`createLxmusicApiBridge`）、`lxmusic-api-request` 这个 IPC、退出时 `lxmusicApiBridge.close()` |
 | `electron/preload.cjs` | 暴露洛雪桥的请求和事件 |
@@ -154,6 +155,8 @@ git push origin lx
 
 然后改 `.github/lx-release-notes.md`：版本号、需要的洛雪版本、这次的变化。开头那段定位说明（只是给喜欢炫酷歌词的人用、歌由洛雪播放）要保留。
 
+发布说明末尾的 `## English` 一段也要跟着改：版本号、需要的洛雪版本、这次的变化写一两句。
+
 写「这次的变化」时，按 `git log --oneline <上一次合入的官方提交>..$TAG` 列，不要照抄官方说明：官方说明是相对官方上一版写的，我们上一次合入的位置可能已经带了其中一部分（0.7.29 就是这样，随机播放、搜索历史等在 0.7.28-lx.3 里已经有了）。
 
 ## 发版
@@ -185,6 +188,19 @@ git push origin lx
   3. 推 `main`。「Build main」打包并发成正式版，所有洛雪增强版的用户会收到应用内更新。
 - 本地仓库的 `git fetch origin` 只跟踪 `main`。要看 `beta` 的最新状态，用 `git fetch origin beta` 或者 `git ls-remote origin`。
 - Linux 的 ARM 交叉编译任务固定在 `ubuntu-24.04`：`ubuntu-latest` 换成 26.04 后，`qemu-user-static` 没了，交叉工具链装不上。
+
+## 简介和说明怎么写
+
+README、发布说明、GitHub 仓库的 About，以及洛雪那边的同类文字，都按这几条写，免得惹上侵权或冒充官方的麻烦：
+
+- **开头就写明是非官方分支**，与官方 Folia、LX Music 原作者无关，问题到本仓库反馈。不要用官方的横幅、Trendshift 徽章、Discord、网盘、一键部署、贡献者徽章这类东西，免得看起来像官方仓库。
+- **简介里不点名具体的音乐平台和视频网站**，写「在线平台」「受支持的视频网站」；举例时写「某平台 · 我喜欢」。软件界面里的名字不受这条限制。
+- **不放带真实歌词、歌曲封面的截图或视频**，那是别人的版权。
+- 不写接口加解密、绕过限制之类的实现细节；高音质只说「取决于平台、地区、版权和你所用的来源」。别人的商标（如 Dolby Atmos）换成通用说法（多声道）。
+- 保留「不提供任何音频、歌词或封面，只使用你有权访问的内容」和「商标与版权声明」两段，以及权利人联系方式（Issues）。
+- 致谢和许可证说明不能删：它们是开源许可的要求。
+- 中文和英文一起改，内容要对得上；界面上的名字照语言文件里的写（英文看 `src/i18n/locales/en.ts`）。
+- GitHub 仓库的 About 用 `gh repo edit xinzhihong-ship-it/folia-major --description ...` 改。这个仓库里 `gh` 默认指向官方仓库，命令里一定写上 `--repo` 或完整的仓库名。
 
 ## 两边的接口约定
 
